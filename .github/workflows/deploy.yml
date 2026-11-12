@@ -1,0 +1,58 @@
+# Every push to main tests the plugins, then builds, signs, and publishes them with the plugin catalog.
+# Uses the same secrets as TaskProxyApp: the update signing key, and the CDN's SFTP login.
+name: Publish plugins
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --workspace
+      - name: Lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Add the WebAssembly target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Build, sign, and write the catalog
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: ./PowerShell/Build.ps1 -Sign -Catalog
+      - name: Arrange the files by version
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path upload | Out-Null
+          Copy-Item dist/catalog.json upload/catalog.json
+          Get-ChildItem dist -Directory | ForEach-Object {
+            $version = (Get-Content (Join-Path $_.FullName 'plugin.json') -Raw | ConvertFrom-Json).version
+            $target = "upload/$($_.Name)/$version"
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            Copy-Item (Join-Path $_.FullName 'plugin.json') $target
+            Copy-Item (Join-Path $_.FullName 'plugin.wasm') $target
+          }
+      - name: Upload to the CDN
+        uses: garygrossgarten/github-action-scp@release
+        with:
+          host: ${{ secrets.CDN_SERVER_DOMAIN }}
+          username: ${{ secrets.CDN_SERVER_USER }}
+          password: ${{ secrets.CDN_SERVER_PW }}
+          port: ${{ secrets.CDN_SERVER_PORT }}
+          local: "upload"
+          remote: "${{ secrets.CDN_APP_PATH }}/task-proxy/plugins/"

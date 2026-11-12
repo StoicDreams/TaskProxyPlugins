@@ -1,0 +1,15 @@
+[package]
+name = "taskproxy-test-plugin"
+version = "0.1.0"
+description = "A plugin that exercises every host call, for Task Proxy's own tests"
+publish = false
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+taskproxy-plugin-sdk.workspace = true
+serde_json.workspace = true

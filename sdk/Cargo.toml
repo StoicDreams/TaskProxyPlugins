@@ -1,0 +1,15 @@
+[package]
+name = "taskproxy-plugin-sdk"
+version = "0.1.0"
+description = "Types and bindings for writing Task Proxy plugins in Rust"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+# Only a plugin built for WebAssembly talks to Task Proxy. Native builds are for unit tests, which supply their own Host.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+extism-pdk = { version = "1.4.1", default-features = false }
