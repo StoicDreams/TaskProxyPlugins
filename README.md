@@ -24,18 +24,20 @@ Plugins never send HTML or scripts. They describe their screens as data (`sdk/sr
 1. Copy `plugins/jira` as a starting point: a `cdylib` crate depending on `taskproxy-plugin-sdk`, with a `plugin.json`.
 2. Implement `Plugin` (`render`, `action`, and optionally `branch_info`) and export it with `export_plugin!(MyPlugin)`.
 3. Test it natively with a fake `Host`, as `plugins/jira/src/lib.rs` does in `testing::FakeHost`.
-4. Run `pwsh ./PowerShell/Build.ps1`, then in Task Proxy choose **Plugins → Install from folder** and pick `dist/<id>`.
+4. Run `pwsh ./scripts/build.ps1`, then in Task Proxy choose **Plugins → Install from folder** and pick `dist/<id>`.
 
 ```bash
 cargo test                                            # Every crate's tests, natively
 cargo clippy --all-targets                            # Lint
-pwsh ./PowerShell/Build.ps1                           # Build every plugin into dist/<id>
+pwsh ./scripts/build.ps1                           # Build every plugin into dist/<id>
 cargo run -p taskproxy-jira --example demo -- <dir>   # The Jira screens for the website, as JSON
 ```
 
 ## Publishing
 
-Every push to `main` runs `.github/workflows/deploy.yml`: it tests, builds, signs both files of each plugin with the Task Proxy update key, and uploads them with `catalog.json` to `https://cdn.myfi.ws/apps/task-proxy/plugins/`. Task Proxy checks the signatures, and that the signed manifest asks for exactly the permissions the catalog shows, before installing. Bump a plugin's version in both its `Cargo.toml` and `plugin.json` before pushing a change.
+Before every commit, run `pwsh ./scripts/publish.ps1`. It formats the code, gives each plugin that changed a new version, lints, runs the tests, builds every plugin, and updates the plugin files TaskProxyApp keeps (its test plugin and the Jira screens for the website). `-Version minor` or `major` picks the version part, and `-SkipVersionBump` and `-SkipApp` leave those steps out.
+
+Every push to `main` runs `.github/workflows/deploy.yml`: it tests, builds, signs both files of each plugin with the Task Proxy update key, and uploads them with `catalog.json` to `https://cdn.myfi.ws/apps/task-proxy/plugins/`. Task Proxy checks the signatures, and that the signed manifest asks for exactly the permissions the catalog shows, before installing.
 
 ## License
 

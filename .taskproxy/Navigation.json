@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Dev",
+    "icon": "emoji-gear",
+    "url": "/313309c6-f9b6-41c9-adde-7472cc284e90",
+    "children": null
+  },
+  {
+    "name": "Publish",
+    "icon": "emoji-package",
+    "url": "/1d230c25-ec10-4cd8-8c25-17030215873c",
+    "children": null
+  },
+  {
+    "name": "New Plugin",
+    "icon": "emoji-jigsaw",
+    "url": "/536e6d8b-3a97-4444-b9e4-44dab61f0d57",
+    "children": null
+  }
+]

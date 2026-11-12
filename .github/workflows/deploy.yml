@@ -34,7 +34,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: ./PowerShell/Build.ps1 -Sign -Catalog
+        run: ./scripts/build.ps1 -Sign -Catalog
       - name: Arrange the files by version
         shell: pwsh
         run: |

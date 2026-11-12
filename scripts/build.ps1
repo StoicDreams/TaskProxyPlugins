@@ -37,7 +37,8 @@ function Invoke-Signer([string]$File, [string]$KeyFile, [string]$Password) {
 Push-Location $root
 try {
     Invoke-Native 'Building the plugins' { cargo build --release --target wasm32-unknown-unknown }
-    $built = Join-Path $root 'target/wasm32-unknown-unknown/release'
+    $targetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root 'target' }
+    $built = Join-Path $targetDir 'wasm32-unknown-unknown/release'
     $dist = Join-Path $root 'dist'
     New-Item -ItemType Directory -Force -Path $dist | Out-Null
     $entries = @()
