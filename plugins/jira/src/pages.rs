@@ -1,18 +1,15 @@
-//! The Jira plugin's pages: My Issues, one issue through a View, and Create Issue.
+//! The Jira plugin's pages: one issue through a View, and Create Issue. My Issues and All Issues are in `list`.
 use crate::adf;
 use crate::client::{Jira, encode};
 use crate::fields::{self, Fields};
+use crate::list;
 use crate::views;
-use taskproxy_plugin_sdk::ui::{self, Action, Choice, Field, FieldKind, Node, TableRow};
+use taskproxy_plugin_sdk::ui::{self, Action, Choice, Field, FieldKind, Node};
 use taskproxy_plugin_sdk::{
     ActionRequest, ActionResult, Error, HostAction, Map, Result, Value, json,
 };
 
-pub const DEFAULT_JQL: &str =
-    "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC";
-const FILTERS_KEY: &str = "filters";
 const LAST_VIEW_KEY: &str = "lastView";
-const PAGE_SIZE: u64 = 50;
 
 pub fn param<'a>(params: &'a Map<String, Value>, name: &str) -> &'a str {
     params.get(name).and_then(Value::as_str).unwrap_or("")
@@ -37,140 +34,6 @@ fn params(pairs: &[(&str, &str)]) -> Map<String, Value> {
 
 pub fn open_issue(key: &str) -> Action {
     Action::new("open", format!("Open {}", key)).param("key", key)
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
-struct Filter {
-    name: String,
-    jql: String,
-}
-
-fn filters(jira: &Jira) -> Result<Vec<Filter>> {
-    Ok(jira
-        .host
-        .store_get(FILTERS_KEY)?
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or_default())
-}
-
-/// My Issues: a JQL search, saved searches, and a page of results.
-pub fn issues(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> Result<Node> {
-    let jql = match param(page_params, "jql") {
-        "" => DEFAULT_JQL,
-        jql => jql,
-    };
-    let token = param(page_params, "token");
-    let points = fields.story_points();
-    let sprint = fields.sprint();
-    let mut wanted = vec!["summary", "status", "priority", "issuetype", "updated"];
-    wanted.extend(points.as_deref());
-    wanted.extend(sprint.as_deref());
-    let mut body = json!({ "jql": jql, "maxResults": PAGE_SIZE, "fields": wanted });
-    if !token.is_empty() {
-        body["nextPageToken"] = json!(token);
-    }
-    let found = jira.post("search/jql", &body)?;
-    let rows: Vec<TableRow> = found
-        .get("issues")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or(&[])
-        .iter()
-        .map(|issue| {
-            let key = issue
-                .get("key")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            let values = issue.get("fields").cloned().unwrap_or(Value::Null);
-            let text = |id: Option<&str>| {
-                id.map(|id| fields::value_text(values.get(id).unwrap_or(&Value::Null)))
-                    .unwrap_or_default()
-            };
-            TableRow {
-                cells: vec![
-                    ui::strong(key.clone()),
-                    ui::text(text(Some("summary"))),
-                    fields::value_node("status", values.get("status").unwrap_or(&Value::Null)),
-                    ui::text(text(Some("priority"))),
-                    ui::text(text(sprint.as_deref())),
-                    ui::text(text(points.as_deref())),
-                    ui::muted(text(Some("updated"))),
-                ],
-                action: Some(open_issue(&key)),
-            }
-        })
-        .collect();
-    let mut children = vec![Node::Form {
-        fields: vec![
-            Field::new(FieldKind::Textarea, "jql", "JQL")
-                .value(jql)
-                .help("Jira Query Language, as in Jira's advanced search."),
-        ],
-        submit: Action::new("issues.search", "Search").icon("magnifying-glass"),
-        cancel: None,
-    }];
-    let saved = filters(jira)?;
-    let mut saved_links = vec![ui::link(
-        "My open issues",
-        Action::new("issues.search", "My open issues").param("jql", DEFAULT_JQL),
-    )];
-    for (index, filter) in saved.iter().enumerate() {
-        saved_links.push(ui::link(
-            filter.name.clone(),
-            Action::new("issues.search", filter.name.clone()).param("jql", filter.jql.clone()),
-        ));
-        saved_links.push(ui::link(
-            "✕",
-            Action::new("issues.deleteFilter", format!("Delete {}", filter.name))
-                .param("index", index)
-                .confirm(format!("Delete the saved search '{}'?", filter.name)),
-        ));
-    }
-    children.push(ui::row(saved_links));
-    children.push(Node::Form {
-        fields: vec![
-            Field::new(FieldKind::Text, "name", "Save this search as").placeholder("Sprint bugs"),
-        ],
-        submit: Action::new("issues.saveFilter", "Save search").param("jql", jql),
-        cancel: None,
-    });
-    if rows.is_empty() {
-        children.push(ui::empty("No issues match this search."));
-    } else {
-        children.push(Node::Table {
-            columns: [
-                "Key", "Summary", "Status", "Priority", "Sprint", "Points", "Updated",
-            ]
-            .map(String::from)
-            .to_vec(),
-            rows,
-        });
-    }
-    let mut paging = Vec::new();
-    if !token.is_empty() {
-        paging.push(ui::button(
-            Action::new("issues.search", "First page").param("jql", jql),
-            "",
-        ));
-    }
-    if let Some(next) = found.get("nextPageToken").and_then(Value::as_str)
-        && !found
-            .get("isLast")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-    {
-        paging.push(ui::button(
-            Action::new("issues.search", format!("Next {}", PAGE_SIZE))
-                .param("jql", jql)
-                .param("token", next),
-            "",
-        ));
-    }
-    if !paging.is_empty() {
-        children.push(ui::toolbar(paging));
-    }
-    Ok(ui::stack(children))
 }
 
 /// A branch name for an issue: its key, then a short slug of its summary.
@@ -200,7 +63,10 @@ pub fn branch_name(key: &str, summary: &str) -> String {
 pub fn issue(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> Result<Node> {
     let key = param(page_params, "key").trim().to_uppercase();
     if key.is_empty() {
-        return Ok(ui::notice("Open an issue from My Issues.", "info"));
+        return Ok(ui::notice(
+            "Open an issue from My Issues or All Issues.",
+            "info",
+        ));
     }
     let view_key = match param(page_params, "view") {
         "" => jira
@@ -291,6 +157,8 @@ pub fn issue(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> 
             ],
             submit: Action::new("issue.view", "Show").param("key", key.clone()),
             cancel: None,
+            buttons: Vec::new(),
+            children: Vec::new(),
         },
     ];
     if !moves.is_empty() {
@@ -298,21 +166,22 @@ pub fn issue(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> 
             fields: vec![Field::new(FieldKind::Select, "transition", "Move to").options(moves)],
             submit: Action::new("issue.transition", "Move").param("key", key.clone()),
             cancel: None,
+            buttons: Vec::new(),
+            children: Vec::new(),
         });
     }
     children.extend(sections);
     children.push(Node::Form {
-        fields: vec![
-            Field::new(FieldKind::Textarea, "body", "Add a comment")
-                .placeholder("Markdown: **bold**, *italic*, `code`, lists, and links"),
-        ],
+        fields: vec![list::comment_field(&key, "Add a comment")],
         submit: Action::new("issue.comment", "Comment").param("key", key.clone()),
         cancel: None,
+        buttons: Vec::new(),
+        children: Vec::new(),
     });
     Ok(ui::stack(children))
 }
 
-fn me(jira: &Jira) -> Result<String> {
+pub fn me(jira: &Jira) -> Result<String> {
     let site_key = format!("me:{}", jira.site);
     if let Some(id) = jira
         .host
@@ -358,6 +227,8 @@ pub fn create(jira: &Jira, page_params: &Map<String, Value>) -> Result<Node> {
         ],
         submit: Action::new("create.project", "Choose"),
         cancel: None,
+        buttons: Vec::new(),
+        children: Vec::new(),
     };
     if project.is_empty() {
         return Ok(ui::stack(vec![project_form]));
@@ -408,6 +279,8 @@ pub fn create(jira: &Jira, page_params: &Map<String, Value>) -> Result<Node> {
             ],
             submit: Action::new("create.submit", "Create issue").param("project", project),
             cancel: None,
+            buttons: Vec::new(),
+            children: Vec::new(),
         },
     ]))
 }
@@ -417,43 +290,6 @@ pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResul
     let p = &request.params;
     let result = match request.action.as_str() {
         "open" => ActionResult::navigate("issue", params(&[("key", param(p, "key"))])),
-        "issues.search" => {
-            let jql = match form(request, "jql") {
-                "" => param(p, "jql"),
-                jql => jql,
-            };
-            ActionResult::navigate(
-                "issues",
-                params(&[("jql", jql), ("token", param(p, "token"))]),
-            )
-        }
-        "issues.saveFilter" => {
-            let name = form(request, "name");
-            if name.is_empty() {
-                return Ok(Some(
-                    ActionResult::default().with_message("Name the search to save it.", "warning"),
-                ));
-            }
-            let mut saved = filters(jira)?;
-            saved.retain(|filter| filter.name != name);
-            saved.push(Filter {
-                name: name.to_string(),
-                jql: param(p, "jql").to_string(),
-            });
-            jira.host
-                .store_set(FILTERS_KEY, Some(serde_json::to_value(&saved)?))?;
-            ActionResult::refresh().with_message(format!("Saved '{}'.", name), "success")
-        }
-        "issues.deleteFilter" => {
-            let mut saved = filters(jira)?;
-            let index = p.get("index").and_then(Value::as_u64).unwrap_or(u64::MAX) as usize;
-            if index < saved.len() {
-                saved.remove(index);
-            }
-            jira.host
-                .store_set(FILTERS_KEY, Some(serde_json::to_value(&saved)?))?;
-            ActionResult::refresh()
-        }
         "issue.refresh" => ActionResult::refresh(),
         "issue.view" => {
             let view = form(request, "view");
@@ -484,7 +320,7 @@ pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResul
             let key = param(p, "key");
             jira.post(
                 &format!("issue/{}/comment", encode(key)),
-                &json!({ "body": adf::from_markdown(body) }),
+                &json!({ "body": adf::from_markdown_with_mentions(body, &list::mentions(request, "body")) }),
             )?;
             ActionResult::refresh().with_message("Comment added.", "success")
         }
@@ -604,7 +440,7 @@ pub fn branch_card(jira: &Jira, branch: &str) -> Result<Option<Node>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{FakeHost, sample_fields};
+    use crate::tests::FakeHost;
 
     fn request(action: &str, params: Value, form: Value) -> ActionRequest {
         ActionRequest {
@@ -646,49 +482,6 @@ mod tests {
             "P-1-a-very-long-summary-that-keeps-going-on"
         );
         assert_eq!(branch_name("P-1", "!!!"), "P-1");
-    }
-
-    #[test]
-    fn my_issues_lists_a_page_and_offers_the_next() {
-        let host = FakeHost::connected();
-        host.answer("GET", "/rest/api/3/field", 200, sample_fields());
-        host.answer("POST", "/rest/api/3/search/jql", 200, json!({
-            "issues": [{ "key": "P-3", "fields": {
-                "summary": "Fix login", "status": { "name": "In Progress", "statusCategory": { "key": "indeterminate" } },
-                "priority": { "name": "High" }, "updated": "2026-11-10T14:05:31.000+0000",
-                "customfield_10016": 3, "customfield_10020": [{ "name": "Sprint 12" }]
-            } }],
-            "nextPageToken": "abc", "isLast": false
-        }));
-        let jira = Jira::connect(&host).unwrap().unwrap();
-        let fields = Fields::load(&jira).unwrap();
-        let page = issues(&jira, &fields, &Map::new()).unwrap();
-        let sent = host.sent.borrow();
-        let body: Value = serde_json::from_str(sent[1].body.as_deref().unwrap()).unwrap();
-        assert_eq!(body["jql"], DEFAULT_JQL);
-        assert_eq!(
-            body["fields"],
-            json!([
-                "summary",
-                "status",
-                "priority",
-                "issuetype",
-                "updated",
-                "customfield_10016",
-                "customfield_10020"
-            ])
-        );
-        let text = serde_json::to_string(&page).unwrap();
-        for expected in [
-            "Fix login",
-            "Sprint 12",
-            "\"3\"",
-            "2026-11-10 14:05",
-            "In Progress",
-            "\"token\":\"abc\"",
-        ] {
-            assert!(text.contains(expected), "{} in {}", expected, text);
-        }
     }
 
     #[test]
@@ -763,34 +556,6 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(empty.message.unwrap().theme, "warning");
-    }
-
-    #[test]
-    fn saved_searches_are_kept_and_removed() {
-        let host = FakeHost::connected();
-        let jira = Jira::connect(&host).unwrap().unwrap();
-        action(
-            &jira,
-            &request(
-                "issues.saveFilter",
-                json!({ "jql": "project = P" }),
-                json!({ "name": "Platform" }),
-            ),
-        )
-        .unwrap();
-        assert_eq!(
-            filters(&jira).unwrap(),
-            vec![Filter {
-                name: "Platform".into(),
-                jql: "project = P".into()
-            }]
-        );
-        action(
-            &jira,
-            &request("issues.deleteFilter", json!({ "index": 0 }), json!({})),
-        )
-        .unwrap();
-        assert!(filters(&jira).unwrap().is_empty());
     }
 
     #[test]

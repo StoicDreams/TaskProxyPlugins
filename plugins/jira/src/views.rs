@@ -98,7 +98,7 @@ pub fn resolve(id: &str, fields: &Fields) -> Option<String> {
 }
 
 /// The site's field id as a View saves it.
-fn portable(id: &str, fields: &Fields) -> String {
+pub fn portable(id: &str, fields: &Fields) -> String {
     if fields.story_points().as_deref() == Some(id) {
         STORY_POINTS.into()
     } else if fields.sprint().as_deref() == Some(id) {
@@ -108,7 +108,7 @@ fn portable(id: &str, fields: &Fields) -> String {
     }
 }
 
-fn field_label(id: &str, fields: &Fields) -> String {
+pub fn field_label(id: &str, fields: &Fields) -> String {
     match id {
         STORY_POINTS => "Story points".into(),
         SPRINT => "Sprint".into(),
@@ -407,6 +407,8 @@ fn editor(host: &dyn Host, fields: &Fields, draft: &Draft) -> Node {
             fields: vec![Field::new(FieldKind::Select, "field", "Add a field").options(available)],
             submit: Action::new("draft.add", "Add").param("layer", depth),
             cancel: None,
+            buttons: Vec::new(),
+            children: Vec::new(),
         });
         if depth > 0 {
             items.push(ui::link(
@@ -456,6 +458,8 @@ fn editor(host: &dyn Host, fields: &Fields, draft: &Draft) -> Node {
         ],
         submit: Action::new("draft.save", "Save View"),
         cancel: Some(Action::new("draft.cancel", "Cancel")),
+        buttons: Vec::new(),
+        children: Vec::new(),
     });
     ui::stack(children)
 }

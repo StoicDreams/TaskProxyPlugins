@@ -1,5 +1,5 @@
 //! What Task Proxy sends to a plugin's exports, and what an action returns.
-use crate::ui::Node;
+use crate::ui::{Choice, Node};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -49,6 +49,15 @@ pub struct ActionResult {
     /// Shown briefly to the user.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<Message>,
+    /// Opens a dialog. Actions from inside it answer with `ui` to change what it shows, `refresh` to draw the page
+    /// behind it again, and `close_dialog` to close it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dialog: Option<Dialog>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub close_dialog: bool,
+    /// The choices for a `Select` node or a field's `suggest`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<Choice>>,
 }
 
 impl ActionResult {
@@ -76,6 +85,35 @@ impl ActionResult {
         }
     }
 
+    pub fn dialog(title: impl Into<String>, ui: Node) -> Self {
+        ActionResult {
+            dialog: Some(Dialog {
+                title: title.into(),
+                ui,
+            }),
+            ..Default::default()
+        }
+    }
+
+    pub fn options(options: Vec<Choice>) -> Self {
+        ActionResult {
+            options: Some(options),
+            ..Default::default()
+        }
+    }
+
+    /// Also draws the page behind a dialog again.
+    pub fn and_refresh(mut self) -> Self {
+        self.refresh = true;
+        self
+    }
+
+    /// Also closes the dialog the action came from.
+    pub fn and_close(mut self) -> Self {
+        self.close_dialog = true;
+        self
+    }
+
     pub fn with_message(mut self, text: impl Into<String>, theme: &str) -> Self {
         self.message = Some(Message {
             text: text.into(),
@@ -83,6 +121,13 @@ impl ActionResult {
         });
         self
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Dialog {
+    pub title: String,
+    pub ui: Node,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -99,6 +144,48 @@ pub struct Message {
     pub text: String,
     /// info, success, warning, or danger.
     pub theme: String,
+}
+
+/// Asks for the plugin's notifications, which Task Proxy shows in its Alerts panel.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationsRequest {}
+
+/// One notification. Task Proxy keeps it in the Alerts panel until the plugin stops listing it, or the user closes
+/// it, which calls the plugin's `notification_read` with its `id`.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Notification {
+    /// Unique among the plugin's notifications, and the same each time it is listed.
+    pub id: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    /// info, success, warning, or danger.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub theme: String,
+    /// When it happened, as Jira or the plugin writes it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub time: String,
+    /// Each place in `title` or `text` where this text appears becomes a link to one of the plugin's pages.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<NotificationLink>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationLink {
+    pub text: String,
+    pub page: String,
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub params: Map<String, Value>,
+}
+
+/// The user closed a notification.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationReadRequest {
+    pub id: String,
 }
 
 /// Something Task Proxy does itself when the user clicks a button that names it. A plugin cannot run these on
@@ -119,6 +206,9 @@ pub enum HostAction {
     /// Opens the plugin's settings in Task Proxy, where the user enters the variables it declares.
     #[serde(rename = "openSettings")]
     OpenSettings,
+    /// Shows or hides the `Panel` with this key, on the page or in its dialog.
+    #[serde(rename = "toggle")]
+    Toggle { key: String },
 }
 
 #[cfg(test)]

@@ -327,6 +327,65 @@ pub fn from_markdown(markdown: &str) -> Value {
     json!({ "type": "doc", "version": 1, "content": content })
 }
 
+/// Markdown as a document, with each `@Name` the user picked from suggestions as a mention of that person.
+/// `mentions` maps the text written, such as `@Sam Lee`, to the person's account id.
+pub fn from_markdown_with_mentions(markdown: &str, mentions: &[(String, String)]) -> Value {
+    let mut doc = from_markdown(markdown);
+    // Longer names first, so `@Sam Lee` wins over `@Sam`.
+    let mut names: Vec<&(String, String)> = mentions
+        .iter()
+        .filter(|(text, id)| text.len() > 1 && !id.is_empty())
+        .collect();
+    names.sort_by_key(|(text, _)| std::cmp::Reverse(text.len()));
+    if !names.is_empty() {
+        mention_in(&mut doc, &names);
+    }
+    doc
+}
+
+fn mention_in(node: &mut Value, names: &[&(String, String)]) {
+    let Some(content) = node.get_mut("content").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let mut out = Vec::with_capacity(content.len());
+    for mut child in content.drain(..) {
+        let plain_text = child.get("type").and_then(Value::as_str) == Some("text")
+            && child.get("marks").is_none();
+        if !plain_text {
+            mention_in(&mut child, names);
+            out.push(child);
+            continue;
+        }
+        let text = child["text"].as_str().unwrap_or("").to_string();
+        let mut rest = text.as_str();
+        let mut plain = String::new();
+        while !rest.is_empty() {
+            let found = names.iter().find(|(name, _)| {
+                rest.starts_with(name.as_str())
+                    && !rest[name.len()..]
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_alphanumeric())
+            });
+            if let Some((name, id)) = found {
+                if !plain.is_empty() {
+                    out.push(json!({ "type": "text", "text": std::mem::take(&mut plain) }));
+                }
+                out.push(json!({ "type": "mention", "attrs": { "id": id, "text": name } }));
+                rest = &rest[name.len()..];
+            } else {
+                let next = rest.chars().next().unwrap();
+                plain.push(next);
+                rest = &rest[next.len_utf8()..];
+            }
+        }
+        if !plain.is_empty() {
+            out.push(json!({ "type": "text", "text": plain }));
+        }
+    }
+    *content = out;
+}
+
 fn heading_level(line: &str) -> Option<usize> {
     let level = line.chars().take_while(|c| *c == '#').count();
     ((1..=6).contains(&level) && line[level..].starts_with(' ')).then_some(level)
@@ -529,6 +588,29 @@ mod tests {
             doc(json!([{ "type": "paragraph", "content": [text("[x](javascript:alert)")] }]))
         );
         assert_eq!(from_markdown("  \n "), doc(json!([])));
+    }
+
+    #[test]
+    fn picked_mentions_become_mention_nodes() {
+        let mentions = vec![
+            ("@Sam".to_string(), "sam-1".to_string()),
+            ("@Sam Lee".to_string(), "sam-2".to_string()),
+        ];
+        let doc = from_markdown_with_mentions(
+            "Thanks @Sam Lee, and `@Sam` stays code. @Samuel is not one.",
+            &mentions,
+        );
+        assert_eq!(
+            doc["content"][0]["content"],
+            json!([
+                { "type": "text", "text": "Thanks " },
+                { "type": "mention", "attrs": { "id": "sam-2", "text": "@Sam Lee" } },
+                { "type": "text", "text": ", and " },
+                { "type": "text", "text": "@Sam", "marks": [{ "type": "code" }] },
+                { "type": "text", "text": " stays code. @Samuel is not one." },
+            ])
+        );
+        assert_eq!(from_markdown_with_mentions("Hi", &[]), from_markdown("Hi"));
     }
 
     #[test]

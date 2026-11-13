@@ -65,24 +65,107 @@ pub fn host() -> FakeHost {
     host.project_open.set(true);
     host.answer("GET", "/rest/api/3/field", 200, fields());
     let sprint = json!([{ "name": "Atlas Sprint 14", "state": "active" }]);
-    let row = |key: &str, summary: &str, state: Value, priority: &str, points: u32| {
+    let comment = |name: &str, when: &str, text: &str| json!({ "author": user(name), "created": when, "body": doc(&[text]) });
+    let row = |key: &str,
+               summary: &str,
+               state: Value,
+               priority: &str,
+               points: u32,
+               parent: &str,
+               comments: Value| {
         issue(
             key,
             "Task",
             summary,
             json!({
                 "status": state, "priority": { "name": priority }, "updated": "2026-11-11T16:42:00.000+0000",
-                "customfield_10016": points, "customfield_10020": sprint.clone()
+                "customfield_10016": points, "customfield_10020": sprint.clone(),
+                "parent": { "key": parent }, "comment": { "comments": comments }
             }),
         )
     };
     host.answer("POST", "/rest/api/3/search/jql", 200, json!({ "isLast": true, "issues": [
-        row("ATL-142", "Show CI status on the dashboard", status("In Progress", "indeterminate"), "High", 5),
-        row("ATL-139", "Cache release notes between sessions", status("In Review", "indeterminate"), "Medium", 3),
-        row("ATL-151", "Retry failed webhook deliveries", status("To Do", "new"), "High", 8),
-        row("ATL-156", "Add keyboard shortcut for search", status("To Do", "new"), "Low", 2),
-        row("ATL-133", "Fix timezone in deploy summaries", status("Done", "done"), "Medium", 3),
+        row("ATL-142", "Show CI status on the dashboard", status("In Progress", "indeterminate"), "High", 5, "ATL-120",
+            json!([comment("Sam Lee", "2026-11-11T15:30:00.000+0000", "Icons are in. Working on refreshing when a run finishes.")])),
+        row("ATL-139", "Cache release notes between sessions so the changelog opens instantly", status("In Review", "indeterminate"), "Medium", 3, "ATL-120",
+            json!([comment("Priya Shah", "2026-11-11T10:02:00.000+0000", "Looks good. One question about cache expiry in the review.")])),
+        row("ATL-151", "Retry failed webhook deliveries", status("To Do", "new"), "High", 8, "ATL-125", json!([])),
+        row("ATL-156", "Add keyboard shortcut for search", status("To Do", "new"), "Low", 2, "ATL-125", json!([])),
+        row("ATL-133", "Fix timezone in deploy summaries", status("Done", "done"), "Medium", 3, "ATL-120",
+            json!([comment("Morgan Diaz", "2026-11-09T17:45:00.000+0000", "Verified on staging with a UTC+10 account.")])),
     ] }));
+    // Each issue's parent, asked for by key after the search.
+    host.answer_when("POST", "/rest/api/3/search/jql", "key in", 200, json!({ "isLast": true, "issues": [
+        issue("ATL-120", "Story", "Release visibility for teams", json!({ "status": status("In Progress", "indeterminate"), "parent": { "key": "ATL-100" } })),
+        issue("ATL-125", "Story", "Reliable integrations", json!({ "status": status("To Do", "new"), "parent": { "key": "ATL-100" } })),
+    ] }));
+    host.answer(
+        "GET",
+        "/rest/api/3/issuetype",
+        200,
+        json!([{ "name": "Bug" }, { "name": "Story" }, { "name": "Task" }, { "name": "Epic" }]),
+    );
+    host.answer("GET", "/rest/api/3/status", 200, json!([
+        { "name": "To Do" }, { "name": "In Progress" }, { "name": "In Review" }, { "name": "Done" }
+    ]));
+    host.answer(
+        "GET",
+        "/rest/api/3/priority",
+        200,
+        json!([
+            { "name": "Highest" }, { "name": "High" }, { "name": "Medium" }, { "name": "Low" }
+        ]),
+    );
+    host.answer(
+        "GET",
+        "/rest/agile/1.0/board",
+        200,
+        json!({ "values": [{ "id": 7, "name": "Atlas board" }] }),
+    );
+    host.answer("GET", "/rest/agile/1.0/board/7/sprint", 200, json!({ "values": [
+        { "id": 14, "name": "Atlas Sprint 14", "state": "active" }, { "id": 15, "name": "Atlas Sprint 15", "state": "future" }
+    ] }));
+    host.answer("GET", "/rest/api/3/users/search", 200, json!([
+        { "accountId": "sam-lee", "displayName": "Sam Lee", "accountType": "atlassian", "active": true },
+        { "accountId": "priya-shah", "displayName": "Priya Shah", "accountType": "atlassian", "active": true },
+        { "accountId": "morgan-diaz", "displayName": "Morgan Diaz", "accountType": "atlassian", "active": true }
+    ]));
+    host.answer(
+        "GET",
+        "/rest/api/3/user/viewissue/search",
+        200,
+        json!([
+            { "accountId": "priya-shah", "displayName": "Priya Shah", "accountType": "atlassian" },
+            { "accountId": "pat-quinn", "displayName": "Pat Quinn", "accountType": "atlassian" }
+        ]),
+    );
+    host.answer("GET", "/rest/api/3/issue/ATL-142/comment", 200, json!({ "comments": [
+        comment("Priya Shah", "2026-11-10T09:12:00.000+0000", "Design is in the Release Visibility doc. The icon should match the repo list."),
+        comment("Sam Lee", "2026-11-11T15:30:00.000+0000", "Icons are in. Working on refreshing when a run finishes.")
+    ] }));
+    host.store.borrow_mut().insert(
+        "columns.issues".into(),
+        json!([
+            [
+                "summary",
+                "status",
+                "priority",
+                "sprint",
+                "storyPoints",
+                "comment"
+            ],
+            ["summary"],
+            []
+        ]),
+    );
+    host.store.borrow_mut().insert(
+        "columns.all".into(),
+        json!([
+            ["summary", "status", "assignee", "storyPoints", "comment"],
+            ["summary"],
+            []
+        ]),
+    );
     host.answer("GET", "/rest/api/3/issue/ATL-142", 200, issue("ATL-142", "Task", "Show CI status on the dashboard", json!({
         "status": status("In Progress", "indeterminate"), "priority": { "name": "High" },
         "assignee": user("Sam Lee"), "reporter": user("Priya Shah"), "customfield_10016": 5,
@@ -185,6 +268,7 @@ pub fn screens() -> Result<Vec<(&'static str, Value)>> {
     };
     let mut screens = vec![
         ("issues", render("issues", &[])?),
+        ("all", render("all", &[])?),
         ("issue", render("issue", &[("key", "ATL-142")])?),
         ("views", render("views", &[])?),
         ("create", render("create", &[("project", "ATL")])?),
@@ -216,6 +300,31 @@ pub fn screens() -> Result<Vec<(&'static str, Value)>> {
         },
     )?;
     screens.push(("view-editor-added", serde_json::to_value(added.ui)?));
+    let ask = |page: &str, action: &str, pairs: &[(&str, &str)]| {
+        JiraPlugin.action(
+            &host,
+            ActionRequest {
+                page: page.into(),
+                action: action.into(),
+                params: params(pairs),
+                ..Default::default()
+            },
+        )
+    };
+    let options = ask(
+        "issues",
+        "cell.options",
+        &[("key", "ATL-142"), ("field", "status")],
+    )?;
+    screens.push(("status-options", serde_json::to_value(options)?));
+    let comments = ask("issues", "cell.comments", &[("key", "ATL-142")])?;
+    screens.push(("comments", serde_json::to_value(comments)?));
+    let people = ask(
+        "issues",
+        "users.suggest",
+        &[("key", "ATL-142"), ("query", "pr")],
+    )?;
+    screens.push(("mentions", serde_json::to_value(people)?));
     let card = JiraPlugin.branch_info(
         &host,
         BranchInfoRequest {
@@ -233,8 +342,8 @@ mod tests {
     #[test]
     fn every_demo_screen_renders() {
         let screens = screens().unwrap();
-        assert_eq!(screens.len(), 7);
-        let issue = serde_json::to_string(&screens[1].1).unwrap();
+        assert_eq!(screens.len(), 11);
+        let issue = serde_json::to_string(&screens[2].1).unwrap();
         for expected in [
             "Parent · Story ATL-120",
             "Grandparent · Epic ATL-100",
@@ -243,7 +352,34 @@ mod tests {
         ] {
             assert!(issue.contains(expected), "{} in {}", expected, issue);
         }
-        assert!(!screens[5].1.is_null());
-        assert!(!screens[6].1.is_null());
+        for (name, screen) in &screens {
+            assert!(!screen.is_null(), "{}", name);
+        }
+        let issues = serde_json::to_string(&screens[0].1).unwrap();
+        for expected in [
+            "Release visibility for teams",
+            "Parent summary",
+            "Sam Lee: Icons are in.",
+            "Atlas Sprint 14 (active)",
+            "\"type\":\"select\"",
+        ] {
+            assert!(issues.contains(expected), "{} in {}", expected, issues);
+        }
+        assert!(
+            serde_json::to_string(&screens[1].1)
+                .unwrap()
+                .contains("Priya Shah")
+        );
+        let named = |name: &str| {
+            screens
+                .iter()
+                .find(|(found, _)| *found == name)
+                .unwrap()
+                .1
+                .clone()
+        };
+        assert_eq!(named("status-options")["options"][0]["label"], "In Review");
+        assert_eq!(named("comments")["dialog"]["title"], "ATL-142 · Comments");
+        assert_eq!(named("mentions")["options"][0]["label"], "Priya Shah");
     }
 }

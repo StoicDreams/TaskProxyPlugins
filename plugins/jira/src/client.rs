@@ -156,6 +156,33 @@ impl<'a> Jira<'a> {
     pub fn post(&self, path: &str, body: &Value) -> Result<Value> {
         self.send(HttpRequest::new("POST", format!("{}/rest/api/3/{}", self.site, path)).json(body))
     }
+
+    pub fn put(&self, path: &str, body: &Value) -> Result<Value> {
+        self.send(HttpRequest::new("PUT", format!("{}/rest/api/3/{}", self.site, path)).json(body))
+    }
+
+    /// A path on the site outside the REST API, such as the gateway behind Jira's notification bell.
+    pub fn site_get(&self, path: &str) -> Result<Value> {
+        self.send(HttpRequest::new("GET", format!("{}/{}", self.site, path)))
+    }
+
+    pub fn site_post(&self, path: &str, body: &Value) -> Result<Value> {
+        self.send(HttpRequest::new("POST", format!("{}/{}", self.site, path)).json(body))
+    }
+
+    /// Jira Software's API, for boards and sprints.
+    pub fn agile_get(&self, path: &str) -> Result<Value> {
+        self.send(HttpRequest::new(
+            "GET",
+            format!("{}/rest/agile/1.0/{}", self.site, path),
+        ))
+    }
+
+    pub fn agile_post(&self, path: &str, body: &Value) -> Result<Value> {
+        self.send(
+            HttpRequest::new("POST", format!("{}/rest/agile/1.0/{}", self.site, path)).json(body),
+        )
+    }
 }
 
 /// Jira's error messages, from `errorMessages` and `errors`.

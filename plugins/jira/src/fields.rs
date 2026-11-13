@@ -18,6 +18,9 @@ pub struct FieldInfo {
     /// The schema type, such as string, number, user, array, or option.
     #[serde(default)]
     pub kind: String,
+    /// A custom field's type, such as `com.atlassian.jira.plugin.system.customfieldtypes:textarea`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub custom_type: String,
 }
 
 /// Fields listed first in the View editor, in this order.
@@ -71,6 +74,11 @@ fn read_list(body: &Value) -> Vec<FieldInfo> {
                             .unwrap_or(false),
                         kind: field
                             .pointer("/schema/type")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        custom_type: field
+                            .pointer("/schema/custom")
                             .and_then(Value::as_str)
                             .unwrap_or("")
                             .to_string(),

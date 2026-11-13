@@ -37,9 +37,45 @@ pub enum Node {
     /// Labels and values, as for an issue's fields.
     Properties { items: Vec<Property> },
     Table {
-        columns: Vec<String>,
+        columns: Vec<Column>,
         rows: Vec<TableRow>,
     },
+    /// A value the user can change in place, such as an issue's status in a table. Clicking it asks the plugin
+    /// for the choices with `options`, whose result lists them in `options`, so a long table does not load the
+    /// choices of every row. Picking one runs `action` with the choice as `value` in the form.
+    Select {
+        text: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        theme: String,
+        options: Action,
+        action: Action,
+    },
+    /// Text cut to `max` characters, with an ellipsis. Text that was cut shows its first `tip` characters as a
+    /// tooltip, and runs `action` when clicked, such as to show all of it. With `always`, `action` runs even when
+    /// nothing was cut.
+    Clip {
+        text: String,
+        #[serde(default = "default_clip")]
+        max: usize,
+        #[serde(default = "default_tip")]
+        tip: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        action: Option<Action>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        always: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        muted: bool,
+    },
+    /// A part of the page with no title, shown or hidden by a button whose host action is `toggle` with the same
+    /// `key`. Task Proxy remembers whether the user left it open, by `key`.
+    Panel {
+        key: String,
+        #[serde(default)]
+        open: bool,
+        children: Vec<Node>,
+    },
+    /// More of a form's fields, placed anywhere among its `children`.
+    Inputs { fields: Vec<Field> },
     /// A collapsible section. Task Proxy remembers whether the user opened or closed it, by `key`.
     Section {
         key: String,
@@ -56,6 +92,12 @@ pub enum Node {
         submit: Action,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cancel: Option<Action>,
+        /// Buttons shown before the submit button, such as ones that toggle panels of more fields.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        buttons: Vec<Node>,
+        /// Shown below the buttons. The values of `Inputs` among them are sent with the form.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        children: Vec<Node>,
     },
     Button {
         action: Action,
@@ -72,6 +114,48 @@ pub enum Node {
 
 fn default_level() -> u8 {
     2
+}
+
+fn default_clip() -> usize {
+    30
+}
+
+fn default_tip() -> usize {
+    100
+}
+
+/// A table's column title. Its `action` runs when the title is clicked, as to sort by it, and `sort` marks the
+/// column the table is sorted by. A plain string is a title with neither.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(untagged)]
+pub enum Column {
+    Title(String),
+    Sortable {
+        label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        action: Option<Action>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sort: Option<Sort>,
+    },
+}
+
+impl From<&str> for Column {
+    fn from(text: &str) -> Self {
+        Column::Title(text.to_string())
+    }
+}
+
+impl From<String> for Column {
+    fn from(text: String) -> Self {
+        Column::Title(text)
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum Sort {
+    Asc,
+    Desc,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -179,6 +263,12 @@ pub struct Field {
     pub placeholder: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub help: String,
+    /// For text: suggests people or other things to mention as the user types `@` and a few letters. Task Proxy
+    /// runs this with the letters as `query` in the params, and the result's `options` are the suggestions. A
+    /// picked one is written as `@` and its label, and the form also sends `<name>.mentions`, an object of each
+    /// label written, with its `@`, to its value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggest: Option<Action>,
 }
 
 impl Field {
@@ -213,6 +303,11 @@ impl Field {
 
     pub fn help(mut self, text: impl Into<String>) -> Self {
         self.help = text.into();
+        self
+    }
+
+    pub fn suggest(mut self, action: Action) -> Self {
+        self.suggest = Some(action);
         self
     }
 }
@@ -312,6 +407,46 @@ pub fn empty(text: impl Into<String>) -> Node {
     Node::Empty { text: text.into() }
 }
 
+/// Text cut to 30 characters, showing up to 100 as a tooltip, that runs `action` when it was cut and is clicked.
+pub fn clip(text: impl Into<String>, action: Option<Action>) -> Node {
+    Node::Clip {
+        text: text.into(),
+        max: default_clip(),
+        tip: default_tip(),
+        action,
+        always: false,
+        muted: false,
+    }
+}
+
+/// A part of the page shown and hidden by a button made with [`toggle`].
+pub fn panel(key: impl Into<String>, open: bool, children: Vec<Node>) -> Node {
+    Node::Panel {
+        key: key.into(),
+        open,
+        children,
+    }
+}
+
+/// A button that shows or hides the panel with this key.
+pub fn toggle(label: impl Into<String>, key: impl Into<String>) -> Node {
+    button(
+        Action::host(label, HostAction::Toggle { key: key.into() }),
+        "secondary",
+    )
+}
+
+/// A plain form: fields and a submit button.
+pub fn form(fields: Vec<Field>, submit: Action) -> Node {
+    Node::Form {
+        fields,
+        submit,
+        cancel: None,
+        buttons: Vec::new(),
+        children: Vec::new(),
+    }
+}
+
 pub fn property(label: impl Into<String>, value: Node) -> Property {
     Property {
         label: label.into(),
@@ -366,6 +501,56 @@ mod tests {
     }
 
     #[test]
+    fn columns_are_plain_titles_or_sortable_and_new_nodes_read_back() {
+        let columns: Vec<Column> = vec![
+            "Key".into(),
+            Column::Sortable {
+                label: "Summary".into(),
+                action: Some(Action::new("sort", "Sort by Summary")),
+                sort: Some(Sort::Desc),
+            },
+        ];
+        assert_eq!(
+            serde_json::to_value(&columns).unwrap(),
+            json!(["Key", { "label": "Summary", "action": { "id": "sort", "label": "Sort by Summary" }, "sort": "desc" }])
+        );
+        let read: Vec<Column> =
+            serde_json::from_value(json!(["Key", { "label": "Status" }])).unwrap();
+        assert_eq!(
+            read[1],
+            Column::Sortable {
+                label: "Status".into(),
+                action: None,
+                sort: None
+            }
+        );
+        let clip = clip("Long text", Some(Action::new("open", "Open")));
+        assert_eq!(
+            serde_json::to_value(&clip).unwrap(),
+            json!({ "type": "clip", "text": "Long text", "max": 30, "tip": 100, "action": { "id": "open", "label": "Open" } })
+        );
+        // Older plugins send no max or tip.
+        let read: Node = serde_json::from_value(json!({ "type": "clip", "text": "x" })).unwrap();
+        assert!(matches!(
+            read,
+            Node::Clip {
+                max: 30,
+                tip: 100,
+                ..
+            }
+        ));
+        assert_eq!(
+            serde_json::to_value(toggle("JQL", "jql")).unwrap(),
+            json!({ "type": "button", "action": { "id": "", "label": "JQL", "host": { "type": "toggle", "key": "jql" } }, "theme": "secondary" })
+        );
+        let old_form: Node = serde_json::from_value(
+            json!({ "type": "form", "fields": [], "submit": { "id": "go", "label": "Go" } }),
+        )
+        .unwrap();
+        assert_eq!(old_form, form(Vec::new(), Action::new("go", "Go")));
+    }
+
+    #[test]
     fn forms_describe_their_fields() {
         let form = Node::Form {
             fields: vec![
@@ -375,6 +560,8 @@ mod tests {
             ],
             submit: Action::new("create", "Create"),
             cancel: None,
+            buttons: Vec::new(),
+            children: Vec::new(),
         };
         assert_eq!(
             serde_json::to_value(&form).unwrap(),

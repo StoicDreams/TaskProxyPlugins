@@ -20,7 +20,8 @@ pub mod ui;
 
 pub use host::{Host, HttpRequest, HttpResponse};
 pub use protocol::{
-    ActionRequest, ActionResult, BranchInfoRequest, HostAction, Message, Navigate, RenderRequest,
+    ActionRequest, ActionResult, BranchInfoRequest, Dialog, HostAction, Message, Navigate,
+    Notification, NotificationLink, NotificationReadRequest, NotificationsRequest, RenderRequest,
 };
 pub use serde_json::{self, Map, Value, json};
 
@@ -80,6 +81,21 @@ pub trait Plugin {
         _request: BranchInfoRequest,
     ) -> Result<Option<ui::Node>> {
         Ok(None)
+    }
+
+    /// The notifications to show in Task Proxy's Alerts panel, when the manifest contributes `notifications`.
+    /// Task Proxy asks every few minutes, and removes those no longer listed.
+    fn notifications(
+        &self,
+        _host: &dyn Host,
+        _request: NotificationsRequest,
+    ) -> Result<Vec<Notification>> {
+        Ok(Vec::new())
+    }
+
+    /// The user closed a notification in the Alerts panel, so it should be marked read.
+    fn notification_read(&self, _host: &dyn Host, _request: NotificationReadRequest) -> Result<()> {
+        Ok(())
     }
 }
 
@@ -150,6 +166,22 @@ macro_rules! export_plugin {
                 let input = $crate::__pdk::input_bytes();
                 respond($crate::run_export(&input, |request| {
                     ($plugin).branch_info(&$crate::host::TaskProxy, request)
+                }))
+            }
+
+            #[unsafe(no_mangle)]
+            pub extern "C" fn notifications() -> i32 {
+                let input = $crate::__pdk::input_bytes();
+                respond($crate::run_export(&input, |request| {
+                    ($plugin).notifications(&$crate::host::TaskProxy, request)
+                }))
+            }
+
+            #[unsafe(no_mangle)]
+            pub extern "C" fn notification_read() -> i32 {
+                let input = $crate::__pdk::input_bytes();
+                respond($crate::run_export(&input, |request| {
+                    ($plugin).notification_read(&$crate::host::TaskProxy, request)
                 }))
             }
         }

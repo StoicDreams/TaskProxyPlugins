@@ -3,6 +3,8 @@
 mod adf;
 mod client;
 mod fields;
+mod list;
+mod notify;
 mod pages;
 mod views;
 
@@ -44,9 +46,15 @@ impl Plugin for JiraPlugin {
             return setup(host);
         };
         match request.page.as_str() {
-            "issues" => pages::issues(&jira, &Fields::load(&jira)?, &request.params),
+            "issues" | "all" => list::page(
+                &jira,
+                &Fields::load(&jira)?,
+                list::List::of(&request.page),
+                &request.params,
+            ),
             "issue" => pages::issue(&jira, &Fields::load(&jira)?, &request.params),
             "create" => pages::create(&jira, &request.params),
+            "notifications" => notify::page(&jira),
             "views" => views::page(host, &Fields::load(&jira)?, &request.params),
             other => Err(Error(format!("Jira has no page named {}.", other))),
         }
@@ -57,6 +65,12 @@ impl Plugin for JiraPlugin {
             return Ok(ActionResult::ui(setup(host)?));
         };
         if let Some(result) = pages::action(&jira, &request)? {
+            return Ok(result);
+        }
+        if let Some(result) = list::action(&jira, &request)? {
+            return Ok(result);
+        }
+        if let Some(result) = notify::action(&jira, &request)? {
             return Ok(result);
         }
         if request.action.starts_with("views.") || request.action.starts_with("draft.") {
@@ -77,6 +91,24 @@ impl Plugin for JiraPlugin {
             None => Ok(None),
         }
     }
+
+    fn notifications(
+        &self,
+        host: &dyn Host,
+        _request: NotificationsRequest,
+    ) -> Result<Vec<Notification>> {
+        match Jira::connect(host)? {
+            Some(jira) => Ok(notify::list(&jira)?.1),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    fn notification_read(&self, host: &dyn Host, request: NotificationReadRequest) -> Result<()> {
+        match Jira::connect(host)? {
+            Some(jira) => notify::mark_read(&jira, &[request.id]),
+            None => Ok(()),
+        }
+    }
 }
 
 export_plugin!(JiraPlugin);
@@ -94,6 +126,8 @@ pub mod testing {
     pub struct FakeHost {
         pub vars: HashMap<String, String>,
         pub answers: RefCell<HashMap<String, (u16, Value)>>,
+        /// Answers chosen by a piece of the request body, checked first, for searches that differ only by JQL.
+        pub body_answers: RefCell<Vec<(String, String, u16, Value)>>,
         pub sent: RefCell<Vec<HttpRequest>>,
         pub store: RefCell<HashMap<String, Value>>,
         pub files: RefCell<HashMap<String, String>>,
@@ -120,6 +154,23 @@ pub mod testing {
             self.answers
                 .borrow_mut()
                 .insert(format!("{} {}", method, path), (status, body));
+        }
+
+        /// The answer for a method and path whose body contains `needle`.
+        pub fn answer_when(
+            &self,
+            method: &str,
+            path: &str,
+            needle: &str,
+            status: u16,
+            body: Value,
+        ) {
+            self.body_answers.borrow_mut().push((
+                format!("{} {}", method, path),
+                needle.to_string(),
+                status,
+                body,
+            ));
         }
     }
 
@@ -167,11 +218,18 @@ pub mod testing {
             let key = format!("{} {}", request.method, path);
             // An answer set without a query answers every query, for data that does not depend on it.
             let without_query = key.split('?').next().unwrap_or(&key).to_string();
+            let sent_body = request.body.clone().unwrap_or_default();
+            let by_body = self
+                .body_answers
+                .borrow()
+                .iter()
+                .find(|(at, needle, ..)| at == &key && sent_body.contains(needle.as_str()))
+                .map(|(_, _, status, body)| (*status, body.clone()));
             let answers = self.answers.borrow();
-            let (status, body) = answers
-                .get(&key)
-                .or_else(|| answers.get(&without_query))
-                .cloned()
+            let (status, body) = by_body
+                .or_else(|| answers.get(&key).cloned())
+                .map(Some)
+                .unwrap_or_else(|| answers.get(&without_query).cloned())
                 .ok_or_else(|| Error(format!("No answer set for {}", key)))?;
             Ok(HttpResponse {
                 status,
@@ -211,7 +269,7 @@ pub(crate) mod tests {
     #[test]
     fn without_settings_every_page_shows_setup() {
         let host = FakeHost::default();
-        for page in ["issues", "issue", "create", "views"] {
+        for page in ["issues", "all", "issue", "create", "views", "notifications"] {
             let node = JiraPlugin
                 .render(
                     &host,
@@ -275,7 +333,7 @@ pub(crate) mod tests {
             .map(|variable| variable["key"].as_str().unwrap())
             .collect();
         assert_eq!(declared, vec![client::SITE, client::EMAIL, client::TOKEN]);
-        for page in ["issues", "issue", "create", "views"] {
+        for page in ["issues", "all", "issue", "create", "views", "notifications"] {
             assert!(
                 manifest["pages"]
                     .as_array()

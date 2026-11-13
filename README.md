@@ -17,7 +17,7 @@ A plugin is a WebAssembly file with a `plugin.json` manifest. Task Proxy runs it
 - **Storage:** the plugin's own encrypted data, and files under `.taskproxy/plugins/<id>/` in the open project, which a team shares through git.
 - **Git:** `currentBranch` reads the branch, and `createBranch` lets a button create one. A plugin never changes the repo on its own: Task Proxy runs host actions only when the user clicks.
 
-Plugins never send HTML or scripts. They describe their screens as data (`sdk/src/ui.rs`: stacks, tables, forms, collapsible sections, markdown), which Task Proxy draws with its own components and sanitizes.
+Plugins never send HTML or scripts. They describe their screens as data (`sdk/src/ui.rs`: stacks, tables with sortable titles, values changed in place, forms, panels, dialogs, collapsible sections, markdown), which Task Proxy draws with its own components and sanitizes.
 
 ## Writing a plugin
 
