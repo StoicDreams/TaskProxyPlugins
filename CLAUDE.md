@@ -9,13 +9,13 @@ Plugins for Task Proxy (the desktop app in `../TaskProxyApp`), and the Rust SDK 
 ## Commands
 
 ```bash
-pwsh ./scripts/publish.ps1                   # Before every commit: format, bump changed plugins' versions, lint, test, build, update TaskProxyApp's plugin files
+pwsh ./scripts/publish.ps1                   # Before every commit: format, bump changed plugins' versions, lint, test, build, write the Jira demo screens
 cargo test                                   # All tests run natively, with a fake Host
 cargo test -p taskproxy-jira <name>          # One Jira test
 cargo clippy --all-targets -- -D warnings    # CI fails on any warning
 pwsh ./scripts/build.ps1                  # Build every plugin into dist/<id> (plugin.json + plugin.wasm)
-pwsh ./scripts/build.ps1 -UpdateAppFixtures   # Rebuild the test plugin into TaskProxyApp's Rust test fixtures, re-signed with a throwaway key
-cargo run -p taskproxy-jira --example demo -- ../TaskProxyApp/tools/capture/fixtures/jira   # Refresh the website screenshot data
+pwsh ./scripts/build.ps1 -UpdateAppFixtures   # Only when an app test needs a new test plugin: copy it into TaskProxyApp's Rust test fixtures, re-signed with a throwaway key
+cargo run -p taskproxy-jira --example demo -- plugins/jira/demo   # Refresh the website loops' data, which TaskProxyApp's capture reads from here
 ```
 
 ## Layout
@@ -32,7 +32,7 @@ cargo run -p taskproxy-jira --example demo -- ../TaskProxyApp/tools/capture/fixt
 - **The protocol is shared with a released app.** Adding optional fields and node types is fine, since Task Proxy draws unknown nodes as a placeholder. Renaming or removing anything breaks installed apps; that needs a new `API_VERSION` in the SDK and in TaskProxyApp's `plugins/manifest.rs`.
 - **WebAssembly has no clock or randomness here.** Use `Host::now_ms`, and derive ids from it.
 - **A plugin's version is in two places:** its `Cargo.toml` and `plugin.json`. `publish.ps1` bumps both for a plugin that changed since the last commit (an SDK change counts for every plugin), and a Jira test checks they match. Don't bump by hand.
-- **`publish.ps1` writes into TaskProxyApp** beside this repo: the test plugin (only when the built one differs, re-signed with a new throwaway key) and the Jira demo screens. Those files are committed in TaskProxyApp.
+- **Nothing here writes into TaskProxyApp by default,** since a push there releases the app. Its website capture reads `plugins/jira/demo/` and `plugins/jira/plugin.json` from this checkout. The test plugin in its fixtures is updated only by hand, when an app test needs a new host call; an SDK change alone rebuilds a different `.wasm` that its tests do not need.
 - **Icons are Task Proxy's** (`cdn.myfi.ws/icons`). An unknown name shows a placeholder.
 - **Rebuilding the test plugin changes its signatures,** so use `build.ps1 -UpdateAppFixtures`, which re-signs it and replaces the test key in TaskProxyApp.
 

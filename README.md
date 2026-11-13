@@ -30,12 +30,12 @@ Plugins never send HTML or scripts. They describe their screens as data (`sdk/sr
 cargo test                                            # Every crate's tests, natively
 cargo clippy --all-targets                            # Lint
 pwsh ./scripts/build.ps1                           # Build every plugin into dist/<id>
-cargo run -p taskproxy-jira --example demo -- <dir>   # The Jira screens for the website, as JSON
+cargo run -p taskproxy-jira --example demo -- plugins/jira/demo   # The Jira screens for the website, as JSON
 ```
 
 ## Publishing
 
-Before every commit, run `pwsh ./scripts/publish.ps1`. It formats the code, gives each plugin that changed a new version, lints, runs the tests, builds every plugin, and updates the plugin files TaskProxyApp keeps (its test plugin and the Jira screens for the website). `-Version minor` or `major` picks the version part, and `-SkipVersionBump` and `-SkipApp` leave those steps out.
+Before every commit, run `pwsh ./scripts/publish.ps1`. It formats the code, gives each plugin that changed a new version, lints, runs the tests, builds every plugin, and writes the Jira screens TaskProxyApp records the website's loops from into `plugins/jira/demo/`. It never changes TaskProxyApp, so a plugin release needs no app release. `-Version minor` or `major` picks the version part, and `-SkipVersionBump` leaves versions as they are.
 
 Every push to `main` runs `.github/workflows/deploy.yml`: it tests, builds, signs both files of each plugin with the Task Proxy update key, and uploads them with `catalog.json` to `https://cdn.myfi.ws/apps/task-proxy/plugins/`. Task Proxy checks the signatures, and that the signed manifest asks for exactly the permissions the catalog shows, before installing.
 

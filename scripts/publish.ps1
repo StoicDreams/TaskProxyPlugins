@@ -17,28 +17,26 @@ Steps:
 4. Lint with clippy, failing on any warning, as CI does.
 5. Run every test.
 6. Build every plugin to WebAssembly, into dist/<id>.
-7. Update TaskProxyApp, in the checkout beside this repo: the test plugin its Rust tests load, when the SDK or the test
-   plugin changed, and the Jira screens its website screenshots draw. Commit those files in TaskProxyApp.
+7. Write the Jira demo screens to plugins/jira/demo, which TaskProxyApp's website capture reads from this checkout.
+
+Nothing here writes into TaskProxyApp, so publishing plugins never needs an app commit or release. Its tests keep the
+test plugin they were written for; when the test plugin itself changes, this says so, and build.ps1
+-UpdateAppFixtures copies it there for a test that needs it.
 
 .PARAMETER Version
 Which part of a changed plugin's version to increment.
 
 .PARAMETER SkipVersionBump
 Leave versions as they are.
-
-.PARAMETER SkipApp
-Do not update the files in TaskProxyApp.
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('patch', 'minor', 'major')]
     [string]$Version = 'patch',
-    [switch]$SkipVersionBump,
-    [switch]$SkipApp
+    [switch]$SkipVersionBump
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$app = Join-Path (Split-Path $root -Parent) 'TaskProxyApp'
 $targetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root 'target' }
 
 function Invoke-Check([string]$Name, [scriptblock]$Command) {
@@ -92,7 +90,8 @@ function Update-PluginVersions {
     $sdkChanged = Test-Changed @('sdk')
     foreach ($folder in Get-ChildItem (Join-Path $root 'plugins') -Directory) {
         $relative = "plugins/$($folder.Name)"
-        if (-not $sdkChanged -and -not (Test-Changed @($relative))) {
+        # Its demo screens only follow its code, so they alone are no reason for a new version.
+        if (-not $sdkChanged -and -not (Test-Changed @($relative, ":(exclude)$relative/demo"))) {
             Write-Host "  $($folder.Name): unchanged"
             continue
         }
@@ -122,20 +121,6 @@ function Update-PluginVersions {
     }
 }
 
-# Whether the test plugin just built differs from the copy TaskProxyApp's tests load.
-function Test-AppTestPluginStale {
-    $fixture = Join-Path $app 'src-tauri/tests/fixtures/plugins/test'
-    $pairs = @(
-        @((Join-Path $targetDir 'wasm32-unknown-unknown/release/taskproxy_test_plugin.wasm'), (Join-Path $fixture 'plugin.wasm')),
-        @((Join-Path $root 'test-plugin/plugin.json'), (Join-Path $fixture 'plugin.json'))
-    )
-    foreach ($pair in $pairs) {
-        if (-not (Test-Path $pair[1])) { return $true }
-        if ((Get-FileHash $pair[0]).Hash -ne (Get-FileHash $pair[1]).Hash) { return $true }
-    }
-    return $false
-}
-
 function Assert-VersionsMatch {
     Write-Host '== Check that each plugin has one version' -ForegroundColor Cyan
     foreach ($folder in Get-ChildItem (Join-Path $root 'plugins') -Directory) {
@@ -155,28 +140,11 @@ try {
     Invoke-Check 'Lint' { cargo clippy --workspace --all-targets -- -D warnings }
     Invoke-Check 'Run the tests' { cargo test --workspace }
     Invoke-Check 'Build the plugins' { & (Join-Path $PSScriptRoot 'build.ps1') }
-    if (-not $SkipApp) {
-        if (-not (Test-Path $app)) {
-            Write-Host "TaskProxyApp was not found at $app, so its plugin test files and Jira screens were not updated." -ForegroundColor Yellow
-        }
-        else {
-            $testPluginChanged = Test-AppTestPluginStale
-            if ($testPluginChanged) {
-                Invoke-Check "Update TaskProxyApp's test plugin" { & (Join-Path $PSScriptRoot 'build.ps1') -UpdateAppFixtures }
-            }
-            Invoke-Check "Update TaskProxyApp's Jira screens" {
-                cargo run --quiet -p taskproxy-jira --example demo -- (Join-Path $app 'tools/capture/fixtures/jira') | Out-Null
-            }
-            Copy-Item (Join-Path $root 'plugins/jira/plugin.json') (Join-Path $app 'tools/capture/fixtures/jira/plugin.json')
-            $appChanges = git -C $app status --porcelain -- 'src-tauri/tests/fixtures/plugins' 'tools/capture/fixtures'
-            if ($appChanges) {
-                Write-Host 'TaskProxyApp has updated plugin files. Commit them there:' -ForegroundColor Yellow
-                $appChanges | ForEach-Object { Write-Host "  $_" }
-                if ($testPluginChanged) {
-                    Write-Host 'Run its plugin tests: cargo test -p taskproxy plugins' -ForegroundColor Yellow
-                }
-            }
-        }
+    Invoke-Check 'Write the Jira demo screens' {
+        cargo run --quiet -p taskproxy-jira --example demo -- (Join-Path $root 'plugins/jira/demo') | Out-Null
+    }
+    if (Test-Changed @('test-plugin')) {
+        Write-Host 'The test plugin changed. If a TaskProxyApp test needs the change, run ./scripts/build.ps1 -UpdateAppFixtures and commit it there.' -ForegroundColor Yellow
     }
     Write-Host 'Ready to commit.' -ForegroundColor Green
 }
