@@ -199,6 +199,23 @@ pub fn screens() -> Result<Vec<(&'static str, Value)>> {
         },
     )?;
     screens.push(("view-editor", render("views", &[("edit", "1")])?));
+    let added = JiraPlugin.action(
+        &host,
+        ActionRequest {
+            page: "views".into(),
+            action: "draft.add".into(),
+            params: json!({ "layer": 2 })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+            form: json!({ "field": "status" })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+            ..Default::default()
+        },
+    )?;
+    screens.push(("view-editor-added", serde_json::to_value(added.ui)?));
     let card = JiraPlugin.branch_info(
         &host,
         BranchInfoRequest {
@@ -216,7 +233,7 @@ mod tests {
     #[test]
     fn every_demo_screen_renders() {
         let screens = screens().unwrap();
-        assert_eq!(screens.len(), 6);
+        assert_eq!(screens.len(), 7);
         let issue = serde_json::to_string(&screens[1].1).unwrap();
         for expected in [
             "Parent · Story ATL-120",
@@ -227,5 +244,6 @@ mod tests {
             assert!(issue.contains(expected), "{} in {}", expected, issue);
         }
         assert!(!screens[5].1.is_null());
+        assert!(!screens[6].1.is_null());
     }
 }
