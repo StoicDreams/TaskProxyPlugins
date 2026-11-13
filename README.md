@@ -13,7 +13,7 @@ Install them from Task Proxy's **Plugins** page.
 A plugin is a WebAssembly file with a `plugin.json` manifest. Task Proxy runs it with [Extism](https://extism.org), with no WASI, network, or file access of its own. Everything goes through Task Proxy, which refuses anything the manifest does not declare:
 
 - **Hosts:** HTTPS requests only to the hosts in `permissions.hosts`, such as `*.atlassian.net`. No redirects.
-- **Variables:** only the keys in `permissions.variables`. The user enters them in the Plugins panel (the puzzle piece button in the header), where they are saved encrypted for that plugin alone, and a project or global variable of the same name takes their place.
+- **Variables:** only the keys in `permissions.variables`. The user enters them in the Plugins panel (the puzzle piece button in the header), where they are saved encrypted for that plugin alone, for one project at a time, and a project variable of the same name takes their place. A plugin shows only in projects set up for it: those given its settings, or, for a plugin with no settings, those it was turned on for.
 - **Storage:** the plugin's own encrypted data, and files under `.taskproxy/plugins/<id>/` in the open project, which a team shares through git.
 - **Git:** `currentBranch` reads the branch, and `createBranch` lets a button create one. A plugin never changes the repo on its own: Task Proxy runs host actions only when the user clicks.
 
