@@ -389,6 +389,7 @@ mod tests {
             vec![
                 "summary",
                 "status",
+                "priority",
                 "assignee",
                 "description",
                 "comment",

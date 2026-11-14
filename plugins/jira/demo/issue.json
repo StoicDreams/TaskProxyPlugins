@@ -354,6 +354,347 @@
             }
           ],
           "type": "properties"
+        },
+        {
+          "children": [
+            {
+              "columns": [
+                "Work",
+                "Priority",
+                "Story points",
+                "Assignee",
+                "Status"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    {
+                      "children": [
+                        {
+                          "action": {
+                            "id": "open",
+                            "label": "Open ATL-143",
+                            "params": {
+                              "key": "ATL-143"
+                            }
+                          },
+                          "text": "ATL-143",
+                          "type": "link"
+                        },
+                        {
+                          "max": 30,
+                          "text": "Build requirements",
+                          "tip": 100,
+                          "type": "clip"
+                        }
+                      ],
+                      "type": "row"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-143"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-143"
+                        }
+                      },
+                      "text": "High",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Story points",
+                        "params": {
+                          "field": "customfield_10016",
+                          "key": "ATL-143"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Story points",
+                        "params": {
+                          "field": "customfield_10016",
+                          "key": "ATL-143"
+                        }
+                      },
+                      "text": "1",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-143"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-143"
+                        }
+                      },
+                      "text": "Priya Shah",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-143"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-143"
+                        }
+                      },
+                      "text": "Done",
+                      "theme": "success",
+                      "type": "select"
+                    }
+                  ]
+                },
+                {
+                  "cells": [
+                    {
+                      "children": [
+                        {
+                          "action": {
+                            "id": "open",
+                            "label": "Open ATL-144",
+                            "params": {
+                              "key": "ATL-144"
+                            }
+                          },
+                          "text": "ATL-144",
+                          "type": "link"
+                        },
+                        {
+                          "max": 30,
+                          "text": "Development",
+                          "tip": 100,
+                          "type": "clip"
+                        }
+                      ],
+                      "type": "row"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-144"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-144"
+                        }
+                      },
+                      "text": "High",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Story points",
+                        "params": {
+                          "field": "customfield_10016",
+                          "key": "ATL-144"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Story points",
+                        "params": {
+                          "field": "customfield_10016",
+                          "key": "ATL-144"
+                        }
+                      },
+                      "text": "3",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-144"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-144"
+                        }
+                      },
+                      "text": "Sam Lee",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-144"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-144"
+                        }
+                      },
+                      "text": "Done",
+                      "theme": "success",
+                      "type": "select"
+                    }
+                  ]
+                },
+                {
+                  "cells": [
+                    {
+                      "children": [
+                        {
+                          "action": {
+                            "id": "open",
+                            "label": "Open ATL-145",
+                            "params": {
+                              "key": "ATL-145"
+                            }
+                          },
+                          "text": "ATL-145",
+                          "type": "link"
+                        },
+                        {
+                          "max": 30,
+                          "text": "Test execution",
+                          "tip": 100,
+                          "type": "clip"
+                        }
+                      ],
+                      "type": "row"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-145"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-145"
+                        }
+                      },
+                      "text": "High",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Story points",
+                        "params": {
+                          "field": "customfield_10016",
+                          "key": "ATL-145"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Story points",
+                        "params": {
+                          "field": "customfield_10016",
+                          "key": "ATL-145"
+                        }
+                      },
+                      "text": "1",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-145"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-145"
+                        }
+                      },
+                      "text": "Morgan Diaz",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-145"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-145"
+                        }
+                      },
+                      "text": "To Do",
+                      "type": "select"
+                    }
+                  ]
+                }
+              ],
+              "type": "table"
+            }
+          ],
+          "key": "layer-0-subtasks",
+          "open": true,
+          "subtitle": "2 of 3 done (66%)",
+          "title": "Subtasks",
+          "type": "section"
         }
       ],
       "key": "layer-0",

@@ -204,7 +204,14 @@ pub fn host() -> FakeHost {
         ] }));
     }
     atl_142["renderedFields"] = json!({ "description": "<p>Show the latest CI result.</p><img src=\"/rest/api/3/attachment/content/10400\" alt=\"dashboard.png\">" });
+    atl_142["fields"]["subtasks"] =
+        json!([{ "key": "ATL-143" }, { "key": "ATL-144" }, { "key": "ATL-145" }]);
     host.answer("GET", "/rest/api/3/issue/ATL-142", 200, atl_142);
+    host.answer_when("POST", "/rest/api/3/search/jql", "parent = \\\"ATL-142\\\"", 200, json!({ "isLast": true, "issues": [
+        issue("ATL-143", "Subtask", "Build requirements", json!({ "status": status("Done", "done"), "priority": { "name": "High" }, "assignee": user("Priya Shah"), "customfield_10016": 1 })),
+        issue("ATL-144", "Subtask", "Development", json!({ "status": status("Done", "done"), "priority": { "name": "High" }, "assignee": user("Sam Lee"), "customfield_10016": 3 })),
+        issue("ATL-145", "Subtask", "Test execution", json!({ "status": status("To Do", "new"), "priority": { "name": "High" }, "assignee": user("Morgan Diaz"), "customfield_10016": 1 }))
+    ] }));
     host.answer(
         "GET",
         "/rest/api/3/attachment/content/10400?redirect=false",

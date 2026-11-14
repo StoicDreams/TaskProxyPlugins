@@ -27,6 +27,38 @@ pub struct View {
     pub name: String,
     /// The field ids for each layer: the issue first, then its parent, and so on.
     pub layers: Vec<Vec<String>>,
+    /// The fields shown for each layer's subtasks: missing or `None` shows the fields Jira shows, and an empty list
+    /// hides them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subtasks: Vec<Option<Vec<String>>>,
+}
+
+/// The fields Jira shows for subtasks, after the key and summary.
+pub const SUBTASK_FIELDS: [&str; 4] = ["priority", STORY_POINTS, "assignee", "status"];
+
+impl View {
+    /// The fields shown for a layer's subtasks, or none when they are hidden.
+    pub fn subtask_fields(&self, depth: usize) -> Vec<String> {
+        match self.subtasks.get(depth).cloned().flatten() {
+            Some(fields) => fields,
+            None => SUBTASK_FIELDS.map(String::from).to_vec(),
+        }
+    }
+
+    /// Whether a layer's subtask fields were chosen, rather than Jira's.
+    fn custom_subtasks(&self, depth: usize) -> Option<&Vec<String>> {
+        self.subtasks.get(depth).and_then(Option::as_ref)
+    }
+
+    fn set_subtasks(&mut self, depth: usize, fields: Option<Vec<String>>) {
+        if self.subtasks.len() <= depth {
+            self.subtasks.resize(depth + 1, None);
+        }
+        self.subtasks[depth] = fields;
+        while self.subtasks.last().is_some_and(Option::is_none) {
+            self.subtasks.pop();
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -76,6 +108,7 @@ pub fn default_view() -> View {
                 .map(String::from)
                 .to_vec(),
         ],
+        subtasks: Vec::new(),
     }
 }
 
@@ -214,7 +247,7 @@ pub fn layers(jira: &Jira, fields: &Fields, view: &View, key: &str) -> Result<(V
                 .filter_map(|id| resolve(id, fields))
                 .collect::<Vec<_>>(),
         );
-        for always in ["summary", "issuetype", "parent", "status"] {
+        for always in ["summary", "issuetype", "parent", "status", "subtasks"] {
             if !wanted.iter().any(|id| id == always) {
                 wanted.push(always.to_string());
             }
@@ -254,6 +287,9 @@ pub fn layers(jira: &Jira, fields: &Fields, view: &View, key: &str) -> Result<(V
             })
             .collect();
         let mut children = vec![Node::Properties { items }];
+        if let Some(table) = subtasks(jira, fields, view, depth, &issue_key, &issue_fields)? {
+            children.push(table);
+        }
         if depth > 0 {
             children.push(ui::link(
                 format!("Open {}", issue_key),
@@ -384,6 +420,165 @@ pub fn page(host: &dyn Host, fields: &Fields, params: &Map<String, Value>) -> Re
     ]))
 }
 
+/// A layer's subtasks, as Jira shows them: how many are done, then a table with the View's fields for them, which
+/// change in place. `None` when the issue has no subtasks or the View hides them.
+fn subtasks(
+    jira: &Jira,
+    fields: &Fields,
+    view: &View,
+    depth: usize,
+    key: &str,
+    issue_fields: &Value,
+) -> Result<Option<Node>> {
+    let listed = issue_fields
+        .get("subtasks")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let chosen = view.subtask_fields(depth);
+    if listed == 0 || chosen.is_empty() {
+        return Ok(None);
+    }
+    let resolved: Vec<(String, String)> = chosen
+        .iter()
+        .filter_map(|id| Some((id.clone(), resolve(id, fields)?)))
+        .collect();
+    let mut wanted = fields.wanted(
+        &resolved
+            .iter()
+            .map(|(_, real)| real.clone())
+            .collect::<Vec<_>>(),
+    );
+    for always in ["summary", "status", "resolution"] {
+        if !wanted.iter().any(|id| id == always) {
+            wanted.push(always.into());
+        }
+    }
+    let found = jira.post(
+        "search/jql",
+        &json!({ "jql": format!("parent = \"{}\" ORDER BY created ASC", key), "fields": wanted, "maxResults": 100 }),
+    )?;
+    let issues: Vec<Value> = found
+        .get("issues")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let done = issues
+        .iter()
+        .filter(|issue| list::is_finished(issue))
+        .count();
+    let mut columns: Vec<ui::Column> = vec!["Work".into()];
+    columns.extend(
+        resolved
+            .iter()
+            .map(|(id, _)| field_label(id, fields).into()),
+    );
+    let rows =
+        issues
+            .iter()
+            .map(|issue| {
+                let sub_key = issue.get("key").and_then(Value::as_str).unwrap_or("");
+                let summary = issue
+                    .pointer("/fields/summary")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let mut cells = vec![ui::row(vec![
+                    ui::link(sub_key, crate::pages::open_issue(sub_key)),
+                    ui::clip(summary, None),
+                ])];
+                cells.extend(resolved.iter().map(|(id, real)| {
+                    list::cell(fields, real, &field_label(id, fields), Some(issue))
+                }));
+                ui::TableRow {
+                    cells,
+                    action: None,
+                }
+            })
+            .collect();
+    let total = issues.len();
+    Ok(Some(Node::Section {
+        key: format!("layer-{}-subtasks", depth),
+        title: "Subtasks".into(),
+        subtitle: Some(format!(
+            "{} of {} done ({}%)",
+            done,
+            total,
+            (done * 100).checked_div(total).unwrap_or(0)
+        )),
+        open: true,
+        children: vec![Node::Table { columns, rows }],
+    }))
+}
+
+/// The field list an editor action changes: a layer's own fields, or its subtasks', which start as Jira's.
+fn edited_list(draft: &mut Draft, depth: usize, sub: bool) -> Option<&mut Vec<String>> {
+    if depth >= draft.view.layers.len() {
+        return None;
+    }
+    if !sub {
+        return draft.view.layers.get_mut(depth);
+    }
+    if draft.view.custom_subtasks(depth).is_none() {
+        let fields = draft.view.subtask_fields(depth);
+        draft.view.set_subtasks(depth, Some(fields));
+    }
+    draft.view.subtasks.get_mut(depth)?.as_mut()
+}
+
+/// The editor's list of fields, with buttons to order and remove them, and a form to add one.
+fn field_list(
+    choices: &[Choice],
+    fields: &Fields,
+    depth: usize,
+    list: &[String],
+    sub: bool,
+    empty: &str,
+) -> Vec<Node> {
+    let mut items: Vec<Node> = Vec::new();
+    for (index, id) in list.iter().enumerate() {
+        let at = |action: &str, label: &str| {
+            let action = Action::new(action, label)
+                .param("layer", depth)
+                .param("index", index);
+            if sub {
+                action.param("sub", true)
+            } else {
+                action
+            }
+        };
+        let mut line = vec![ui::text(field_label(id, fields))];
+        if index > 0 {
+            line.push(ui::link("Up", at("draft.move", "Move up").param("by", -1)));
+        }
+        if index + 1 < list.len() {
+            line.push(ui::link(
+                "Down",
+                at("draft.move", "Move down").param("by", 1),
+            ));
+        }
+        line.push(ui::link("Remove", at("draft.remove", "Remove")));
+        items.push(ui::row(line));
+    }
+    if items.is_empty() {
+        items.push(ui::empty(empty));
+    }
+    let available: Vec<Choice> = choices
+        .iter()
+        .filter(|choice| !list.contains(&choice.value))
+        .cloned()
+        .collect();
+    let add = Action::new("draft.add", "Add").param("layer", depth);
+    items.push(Node::Form {
+        fields: vec![Field::new(FieldKind::Select, "field", "Add a field").options(available)],
+        submit: if sub { add.param("sub", true) } else { add },
+        cancel: None,
+        buttons: Vec::new(),
+        children: Vec::new(),
+        inline: false,
+    });
+    items
+}
+
 fn editor(host: &dyn Host, fields: &Fields, draft: &Draft) -> Node {
     let choices: Vec<Choice> = fields
         .choices()
@@ -403,44 +598,48 @@ fn editor(host: &dyn Host, fields: &Fields, draft: &Draft) -> Node {
         2,
     )];
     for (depth, layer) in draft.view.layers.iter().enumerate() {
-        let mut items: Vec<Node> = Vec::new();
-        for (index, id) in layer.iter().enumerate() {
-            let at = |action: &str, label: &str| {
-                Action::new(action, label)
-                    .param("layer", depth)
-                    .param("index", index)
-            };
-            let mut controls = Vec::new();
-            if index > 0 {
-                controls.push(ui::link("Up", at("draft.move", "Move up").param("by", -1)));
-            }
-            if index + 1 < layer.len() {
-                controls.push(ui::link(
-                    "Down",
-                    at("draft.move", "Move down").param("by", 1),
-                ));
-            }
-            controls.push(ui::link("Remove", at("draft.remove", "Remove")));
-            let mut line = vec![ui::text(field_label(id, fields))];
-            line.extend(controls);
-            items.push(ui::row(line));
+        let mut items = field_list(&choices, fields, depth, layer, false, "No fields yet.");
+        // The layer's subtasks: Jira's fields until others are chosen, or hidden.
+        let sub_fields = draft.view.subtask_fields(depth);
+        let custom = draft.view.custom_subtasks(depth).is_some();
+        let mut sub_items = if sub_fields.is_empty() {
+            vec![ui::muted("Subtasks are hidden for this layer.")]
+        } else {
+            let mut note = vec![ui::muted(if custom {
+                "Shown after each subtask's key and summary."
+            } else {
+                "The fields Jira shows, after each subtask's key and summary. Change them to choose your own."
+            })];
+            note.extend(field_list(
+                &choices,
+                fields,
+                depth,
+                &sub_fields,
+                true,
+                "No fields.",
+            ));
+            note
+        };
+        let at = |action: &str, label: &str| Action::new(action, label).param("layer", depth);
+        let mut links = Vec::new();
+        if custom && !sub_fields.is_empty() {
+            links.push(ui::link(
+                "Use Jira's fields",
+                at("draft.subtasksReset", "Use Jira's fields"),
+            ));
         }
-        if items.is_empty() {
-            items.push(ui::empty("No fields yet."));
-        }
-        let available: Vec<Choice> = choices
-            .iter()
-            .filter(|choice| !layer.contains(&choice.value))
-            .cloned()
-            .collect();
-        items.push(Node::Form {
-            fields: vec![Field::new(FieldKind::Select, "field", "Add a field").options(available)],
-            submit: Action::new("draft.add", "Add").param("layer", depth),
-            cancel: None,
-            buttons: Vec::new(),
-            children: Vec::new(),
-            inline: false,
+        links.push(if sub_fields.is_empty() {
+            ui::link("Show subtasks", at("draft.subtasksReset", "Show subtasks"))
+        } else {
+            ui::link("Hide subtasks", at("draft.subtasksHide", "Hide subtasks"))
         });
+        sub_items.push(ui::row(links));
+        items.push(ui::section(
+            format!("edit-layer-{}-subtasks", depth),
+            "Subtasks",
+            false,
+            sub_items,
+        ));
         if depth > 0 {
             items.push(ui::link(
                 format!("Remove the {} layer", layer_name(depth).to_lowercase()),
@@ -580,16 +779,14 @@ pub fn action(
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let layer = draft
-                .view
-                .layers
-                .get_mut(param_usize(params, "layer"))
-                .ok_or_else(|| Error::new("That layer no longer exists."))?;
+            let sub = params.get("sub").and_then(Value::as_bool).unwrap_or(false);
             if field.is_empty() {
                 return Ok(Some(
                     ActionResult::default().with_message("Choose a field to add.", "warning"),
                 ));
             }
+            let layer = edited_list(&mut draft, param_usize(params, "layer"), sub)
+                .ok_or_else(|| Error::new("That layer no longer exists."))?;
             if !layer.contains(&field) {
                 layer.push(field);
             }
@@ -599,7 +796,8 @@ pub fn action(
         "draft.move" | "draft.remove" => {
             let mut draft = draft()?;
             let index = param_usize(params, "index");
-            if let Some(layer) = draft.view.layers.get_mut(param_usize(params, "layer"))
+            let sub = params.get("sub").and_then(Value::as_bool).unwrap_or(false);
+            if let Some(layer) = edited_list(&mut draft, param_usize(params, "layer"), sub)
                 && index < layer.len()
             {
                 if request.action == "draft.remove" {
@@ -631,6 +829,17 @@ pub fn action(
             let layer = param_usize(params, "layer");
             if layer > 0 && layer < draft.view.layers.len() {
                 draft.view.layers.truncate(layer);
+                draft.view.subtasks.truncate(layer);
+            }
+            save_draft(host, Some(&draft))?;
+            ActionResult::ui(editor(host, fields, &draft))
+        }
+        "draft.subtasksHide" | "draft.subtasksReset" => {
+            let mut draft = draft()?;
+            let layer = param_usize(params, "layer");
+            if layer < draft.view.layers.len() {
+                let hidden = request.action == "draft.subtasksHide";
+                draft.view.set_subtasks(layer, hidden.then(Vec::new));
             }
             save_draft(host, Some(&draft))?;
             ActionResult::ui(editor(host, fields, &draft))
@@ -723,7 +932,7 @@ mod tests {
         host.answer("GET", "/rest/api/3/field", 200, sample_fields());
         host.answer(
             "GET",
-            "/rest/api/3/issue/P-3?fields=status,customfield_10016,customfield_10026,summary,issuetype,parent",
+            "/rest/api/3/issue/P-3?fields=status,customfield_10016,customfield_10026,summary,issuetype,parent,subtasks",
             200,
             json!({ "key": "P-3", "fields": {
                 "summary": "Fix login", "issuetype": { "name": "Task" },
@@ -733,7 +942,7 @@ mod tests {
         );
         host.answer(
             "GET",
-            "/rest/api/3/issue/P-2?fields=description,summary,issuetype,parent,status",
+            "/rest/api/3/issue/P-2?fields=description,summary,issuetype,parent,status,subtasks",
             200,
             json!({ "key": "P-2", "fields": {
                 "summary": "Sign in", "issuetype": { "name": "Story" }, "parent": { "key": "P-1" },
@@ -749,6 +958,7 @@ mod tests {
                 vec!["status".into(), STORY_POINTS.into()],
                 vec!["description".into()],
             ],
+            subtasks: Vec::new(),
         };
         let (issue, sections) = layers(&jira, &fields, &view, "P-3").unwrap();
         assert_eq!(issue["key"], "P-3");
@@ -799,12 +1009,143 @@ mod tests {
     }
 
     #[test]
+    fn subtasks_show_with_jiras_fields_or_the_views_own_or_not_at_all() {
+        let host = FakeHost::connected();
+        host.answer("GET", "/rest/api/3/field", 200, sample_fields());
+        host.answer("GET", "/rest/api/3/issue/IR-1", 200, json!({ "key": "IR-1", "fields": {
+            "summary": "Story", "issuetype": { "name": "Story" }, "status": { "name": "Code Review" },
+            "subtasks": [{ "key": "IR-2" }, { "key": "IR-3" }, { "key": "IR-4" }]
+        } }));
+        let done = json!({ "name": "Done", "statusCategory": { "key": "done" } });
+        host.answer_when("POST", "/rest/api/3/search/jql", "parent = ", 200, json!({ "isLast": true, "issues": [
+            { "key": "IR-2", "fields": { "summary": "Build Requirements", "status": done, "priority": { "name": "Highest" } } },
+            { "key": "IR-3", "fields": { "summary": "Development", "status": done, "assignee": { "displayName": "Erik" } } },
+            { "key": "IR-4", "fields": { "summary": "Test Execution", "status": { "name": "To Do", "statusCategory": { "key": "new" } }, "customfield_10026": 3 } }
+        ] }));
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        let mut view = View {
+            id: "v".into(),
+            name: "V".into(),
+            layers: vec![vec!["status".into()]],
+            subtasks: Vec::new(),
+        };
+        let table = |view: &View| -> Option<Value> {
+            let (_, sections) = layers(&jira, &fields, view, "IR-1").unwrap();
+            let section = serde_json::to_value(&sections[0]).unwrap();
+            section["children"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|child| child["title"] == "Subtasks")
+                .cloned()
+        };
+        // Jira's own fields: the work, then priority, story points, assignee, and status.
+        let jira_like = table(&view).unwrap();
+        assert_eq!(jira_like["subtitle"], "2 of 3 done (66%)");
+        let grid = &jira_like["children"][0];
+        assert_eq!(
+            grid["columns"],
+            json!(["Work", "Priority", "Story points", "Assignee", "Status"])
+        );
+        assert_eq!(grid["rows"][0]["cells"][0]["children"][0]["text"], "IR-2");
+        assert_eq!(
+            grid["rows"][0]["cells"][0]["children"][1]["text"],
+            "Build Requirements"
+        );
+        // Story points come from whichever field holds them, and change in place.
+        assert_eq!(grid["rows"][2]["cells"][2]["type"], "select");
+        assert_eq!(grid["rows"][2]["cells"][2]["text"], "3");
+        // The View's own fields for this layer.
+        view.set_subtasks(0, Some(vec!["status".into()]));
+        let own = table(&view).unwrap();
+        assert_eq!(own["children"][0]["columns"], json!(["Work", "Status"]));
+        // Hidden.
+        view.set_subtasks(0, Some(Vec::new()));
+        assert!(table(&view).is_none());
+        // Jira's fields again, which saves nothing for the layer.
+        view.set_subtasks(0, None);
+        assert!(view.subtasks.is_empty());
+        let saved = serde_json::to_value(&view).unwrap();
+        assert!(
+            saved.get("subtasks").is_none(),
+            "older Views read back unchanged"
+        );
+    }
+
+    #[test]
+    fn the_editor_chooses_each_layers_subtask_fields() {
+        let host = FakeHost::connected();
+        act(&host, "views.new", json!({}), json!({}));
+        // Changing Jira's fields starts from them.
+        act(
+            &host,
+            "draft.add",
+            json!({ "layer": 0, "sub": true }),
+            json!({ "field": "summary" }),
+        );
+        let draft = read_draft(&host).unwrap().unwrap();
+        let mut expected: Vec<String> = SUBTASK_FIELDS.map(String::from).to_vec();
+        expected.push("summary".into());
+        assert_eq!(draft.view.subtask_fields(0), expected);
+        assert!(
+            !draft.view.layers[0].contains(&"summary".to_string()),
+            "the layer's own fields are unchanged"
+        );
+        act(
+            &host,
+            "draft.remove",
+            json!({ "layer": 0, "index": 0, "sub": true }),
+            json!({}),
+        );
+        assert_eq!(
+            read_draft(&host).unwrap().unwrap().view.subtask_fields(0)[0],
+            STORY_POINTS
+        );
+        act(
+            &host,
+            "draft.subtasksHide",
+            json!({ "layer": 0 }),
+            json!({}),
+        );
+        let hidden = act(
+            &host,
+            "draft.subtasksHide",
+            json!({ "layer": 0 }),
+            json!({}),
+        );
+        assert!(
+            serde_json::to_string(&hidden.ui)
+                .unwrap()
+                .contains("Subtasks are hidden")
+        );
+        assert!(
+            read_draft(&host)
+                .unwrap()
+                .unwrap()
+                .view
+                .subtask_fields(0)
+                .is_empty()
+        );
+        act(
+            &host,
+            "draft.subtasksReset",
+            json!({ "layer": 0 }),
+            json!({}),
+        );
+        assert_eq!(
+            read_draft(&host).unwrap().unwrap().view.subtask_fields(0),
+            SUBTASK_FIELDS.map(String::from).to_vec()
+        );
+    }
+
+    #[test]
     fn an_issue_without_a_parent_shows_only_its_own_layer() {
         let host = FakeHost::connected();
         host.answer("GET", "/rest/api/3/field", 200, sample_fields());
         host.answer(
             "GET",
-            "/rest/api/3/issue/P-1?fields=status,assignee,description,summary,issuetype,parent",
+            "/rest/api/3/issue/P-1?fields=status,assignee,description,summary,issuetype,parent,subtasks",
             200,
             json!({ "key": "P-1", "fields": { "summary": "Epic", "issuetype": { "name": "Epic" } } }),
         );

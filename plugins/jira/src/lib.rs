@@ -270,6 +270,7 @@ pub mod testing {
             { "id": "description", "name": "Description", "custom": false, "schema": { "type": "string" } },
             { "id": "comment", "name": "Comment", "custom": false, "schema": { "type": "comments-page" } },
             { "id": "assignee", "name": "Assignee", "custom": false, "schema": { "type": "user" } },
+            { "id": "priority", "name": "Priority", "custom": false, "schema": { "type": "priority" } },
             { "id": "attachment", "name": "Attachment", "custom": false },
             { "id": "customfield_10016", "name": "Story point estimate", "custom": true, "schema": { "type": "number" } },
             { "id": "customfield_10026", "name": "Story Points", "custom": true, "schema": { "type": "number" } },

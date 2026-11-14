@@ -165,7 +165,7 @@
                   "kind": "textarea",
                   "label": "JQL",
                   "name": "jql",
-                  "value": "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
+                  "value": "assignee = currentUser() AND (resolution = Unresolved OR (issuetype in subTaskIssueTypes() AND updated >= -90d)) ORDER BY updated DESC"
                 }
               ],
               "type": "inputs"
@@ -693,6 +693,11 @@
         "label": "Save search"
       },
       "type": "form"
+    },
+    {
+      "muted": true,
+      "text": "1 finished subtask stays here until its parent is finished.",
+      "type": "text"
     },
     {
       "columns": [

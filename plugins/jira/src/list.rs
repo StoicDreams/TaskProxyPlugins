@@ -24,8 +24,9 @@ const FILTER_OPTIONS_KEY: &str = "filterOptions";
 const FILTER_OPTIONS_MS: u64 = 60 * 60 * 1000;
 const USERS_KEY: &str = "users";
 const USERS_MS: u64 = 24 * 60 * 60 * 1000;
-pub const MY_JQL: &str =
-    "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC";
+/// Your open issues, and your finished subtasks from the last 90 days, of which only those whose parent is not finished
+/// yet are shown: a subtask marked Done after code review still needs following until its story is tested.
+pub const MY_JQL: &str = "assignee = currentUser() AND (resolution = Unresolved OR (issuetype in subTaskIssueTypes() AND updated >= -90d)) ORDER BY updated DESC";
 pub const ALL_JQL: &str = "resolution = Unresolved ORDER BY updated DESC";
 /// The usual planning poker values, offered for story points.
 const POINTS: [&str; 11] = ["0", "0.5", "1", "2", "3", "5", "8", "13", "20", "40", "100"];
@@ -365,6 +366,17 @@ fn issues_of(found: &Value) -> Vec<Value> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default()
+}
+
+/// Whether an issue is finished: resolved, or in a status Jira counts as done.
+pub(crate) fn is_finished(issue: &Value) -> bool {
+    issue
+        .pointer("/fields/resolution")
+        .is_some_and(|resolution| !resolution.is_null())
+        || issue
+            .pointer("/fields/status/statusCategory/key")
+            .and_then(Value::as_str)
+            == Some("done")
 }
 
 fn key_of(issue: &Value) -> &str {
@@ -734,7 +746,11 @@ pub fn page(
     };
     let uses = |depth: usize| resolved.iter().any(|(column, _)| column.layer == depth);
     let mut first = wanted(0);
-    first.push("parent".into());
+    for always in ["parent", "resolution", "status"] {
+        if !first.iter().any(|id| id == always) {
+            first.push(always.into());
+        }
+    }
     let mut body = json!({
         "jql": search_jql(list, page_params, fields),
         "maxResults": PAGE_SIZE,
@@ -744,7 +760,34 @@ pub fn page(
         body["nextPageToken"] = json!(token);
     }
     let found = jira.post("search/jql", &body)?;
-    let issues = issues_of(&found);
+    let mut issues = issues_of(&found);
+    // My Issues' own search also finds finished subtasks, which stay only while their parent is not finished.
+    let mut waiting = 0;
+    if list == List::Mine && param(page_params, "jql").trim().is_empty() {
+        let parent_keys = unique(
+            issues
+                .iter()
+                .filter(|issue| is_finished(issue))
+                .filter_map(|issue| parent_key(issue).map(String::from)),
+        );
+        let finished_parents: Vec<String> = fetch(
+            jira,
+            &parent_keys,
+            &["resolution".to_string(), "status".to_string()],
+        )?
+        .iter()
+        .filter(|parent| is_finished(parent))
+        .map(|parent| key_of(parent).to_string())
+        .collect();
+        issues.retain(|issue| {
+            !is_finished(issue)
+                || parent_key(issue).is_some_and(|parent| {
+                    parent_keys.iter().any(|key| key == parent)
+                        && !finished_parents.iter().any(|key| key == parent)
+                })
+        });
+        waiting = issues.iter().filter(|issue| is_finished(issue)).count();
+    }
     let want_parents = uses(1) || uses(2);
     let parents = if want_parents {
         let keys = unique(
@@ -900,6 +943,15 @@ pub fn page(
         vec![Field::new(FieldKind::Text, "name", "Save this search as").placeholder("Sprint bugs")],
         Action::new("list.save", "Save search"),
     ));
+    if waiting > 0 {
+        children.push(ui::muted(format!(
+            "{} finished {} {} here until {} parent is finished.",
+            waiting,
+            if waiting == 1 { "subtask" } else { "subtasks" },
+            if waiting == 1 { "stays" } else { "stay" },
+            if waiting == 1 { "its" } else { "their" },
+        )));
+    }
     if rows.is_empty() {
         children.push(ui::empty("No issues match this search."));
     } else {
@@ -1608,7 +1660,10 @@ mod tests {
         let fields = Fields::load(&jira).unwrap();
         assert_eq!(
             search_jql(List::Mine, &Map::new(), &fields),
-            "(assignee = currentUser() AND resolution = Unresolved) ORDER BY updated DESC"
+            format!(
+                "({}) ORDER BY updated DESC",
+                MY_JQL.trim_end_matches(" ORDER BY updated DESC")
+            )
         );
         let params = page_params(json!({
             "jql": "project = ATL order by created",
@@ -1713,11 +1768,13 @@ mod tests {
             .filter(|sent| sent.url.ends_with("search/jql"))
             .map(|sent| sent.body.clone().unwrap())
             .collect();
-        assert_eq!(searches.len(), 3);
+        // The search, the parents of finished subtasks (P-2 is done), then the parent and grandparent columns.
+        assert_eq!(searches.len(), 4);
         assert!(searches[0].contains("ORDER BY summary ASC"));
+        assert!(searches[1].contains("\"fields\":[\"resolution\",\"status\",\"parent\"]"));
         // The fake answers every search alike, so its parents are asked for too.
-        assert!(searches[1].contains("key in (\\\"P-2\\\""));
-        assert!(searches[2].contains("\\\"P-1\\\""));
+        assert!(searches[2].contains("key in (\\\"P-2\\\""));
+        assert!(searches[3].contains("\\\"P-1\\\""));
     }
 
     #[test]
@@ -1846,6 +1903,56 @@ mod tests {
         assert_eq!(columns(&host, List::Mine).unwrap(), default_columns());
         run("columns.reset", json!({}), json!({}));
         assert_eq!(columns(&host, List::All).unwrap(), default_columns());
+    }
+
+    #[test]
+    fn my_issues_keep_finished_subtasks_until_their_parent_is_finished() {
+        let host = connected();
+        host.answer("GET", "/rest/api/3/field", 200, sample_fields());
+        let done = json!({ "name": "Done", "statusCategory": { "key": "done" } });
+        let review = json!({ "name": "Code Review", "statusCategory": { "key": "indeterminate" } });
+        // The parents: IR-1 is still in Code Review, and IR-2 is finished.
+        host.answer_when(
+            "POST",
+            "/rest/api/3/search/jql",
+            "key in",
+            200,
+            json!({ "isLast": true, "issues": [
+            { "key": "IR-1", "fields": { "status": review, "resolution": null } },
+            { "key": "IR-2", "fields": { "status": done, "resolution": { "name": "Done" } } }
+        ] }),
+        );
+        host.answer("POST", "/rest/api/3/search/jql", 200, json!({ "isLast": true, "issues": [
+            { "key": "IR-10", "fields": { "summary": "Development", "status": done, "resolution": { "name": "Done" }, "parent": { "key": "IR-1" } } },
+            { "key": "IR-20", "fields": { "summary": "Development", "status": done, "resolution": { "name": "Done" }, "parent": { "key": "IR-2" } } },
+            { "key": "IR-30", "fields": { "summary": "Open work", "status": review, "resolution": null } }
+        ] }));
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        let shown = |list: List, params: Value| {
+            let node = page(&jira, &fields, list, params.as_object().unwrap()).unwrap();
+            serde_json::to_value(&node).unwrap().to_string()
+        };
+        let mine = shown(List::Mine, json!({}));
+        assert!(mine.contains("IR-10"), "its parent is still in code review");
+        assert!(!mine.contains("IR-20"), "its parent is finished");
+        assert!(mine.contains("IR-30"));
+        assert!(mine.contains("1 finished subtask stays here until its parent is finished."));
+        let sent = host
+            .sent
+            .borrow()
+            .iter()
+            .find_map(|sent| {
+                sent.body
+                    .clone()
+                    .filter(|body| body.contains("currentUser"))
+            })
+            .unwrap();
+        assert!(sent.contains("subTaskIssueTypes()"));
+        drop(sent);
+        // A search the user wrote shows what it finds.
+        let own = shown(List::Mine, json!({ "jql": "project = IR" }));
+        assert!(own.contains("IR-20"));
     }
 
     #[test]
