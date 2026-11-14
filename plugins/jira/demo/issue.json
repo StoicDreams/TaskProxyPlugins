@@ -695,6 +695,306 @@
           "subtitle": "2 of 3 done (66%)",
           "title": "Subtasks",
           "type": "section"
+        },
+        {
+          "children": [
+            {
+              "level": 4,
+              "text": "is blocked by",
+              "type": "heading"
+            },
+            {
+              "columns": [
+                "Work",
+                "Status",
+                "Assignee",
+                "Priority"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    {
+                      "children": [
+                        {
+                          "action": {
+                            "id": "open",
+                            "label": "Open ATL-151",
+                            "params": {
+                              "key": "ATL-151"
+                            }
+                          },
+                          "text": "ATL-151",
+                          "type": "link"
+                        },
+                        {
+                          "max": 30,
+                          "text": "Retry failed webhook deliveries",
+                          "tip": 100,
+                          "type": "clip"
+                        }
+                      ],
+                      "type": "row"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-151"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-151"
+                        }
+                      },
+                      "text": "To Do",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-151"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-151"
+                        }
+                      },
+                      "text": "Sam Lee",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-151"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-151"
+                        }
+                      },
+                      "text": "High",
+                      "type": "select"
+                    }
+                  ]
+                },
+                {
+                  "cells": [
+                    {
+                      "children": [
+                        {
+                          "action": {
+                            "id": "open",
+                            "label": "Open ATL-156",
+                            "params": {
+                              "key": "ATL-156"
+                            }
+                          },
+                          "text": "ATL-156",
+                          "type": "link"
+                        },
+                        {
+                          "max": 30,
+                          "text": "Add keyboard shortcut for search",
+                          "tip": 100,
+                          "type": "clip"
+                        }
+                      ],
+                      "type": "row"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-156"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-156"
+                        }
+                      },
+                      "text": "To Do",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-156"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-156"
+                        }
+                      },
+                      "text": "Morgan Diaz",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-156"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-156"
+                        }
+                      },
+                      "text": "Low",
+                      "type": "select"
+                    }
+                  ]
+                }
+              ],
+              "type": "table"
+            },
+            {
+              "level": 4,
+              "text": "relates to",
+              "type": "heading"
+            },
+            {
+              "columns": [
+                "Work",
+                "Status",
+                "Assignee",
+                "Priority"
+              ],
+              "rows": [
+                {
+                  "cells": [
+                    {
+                      "children": [
+                        {
+                          "action": {
+                            "id": "open",
+                            "label": "Open ATL-139",
+                            "params": {
+                              "key": "ATL-139"
+                            }
+                          },
+                          "text": "ATL-139",
+                          "type": "link"
+                        },
+                        {
+                          "max": 30,
+                          "text": "Cache release notes between sessions so the changelog opens instantly",
+                          "tip": 100,
+                          "type": "clip"
+                        }
+                      ],
+                      "type": "row"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-139"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Status",
+                        "params": {
+                          "field": "status",
+                          "key": "ATL-139"
+                        }
+                      },
+                      "text": "In Review",
+                      "theme": "info",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-139"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Assignee",
+                        "params": {
+                          "field": "assignee",
+                          "key": "ATL-139"
+                        }
+                      },
+                      "text": "Priya Shah",
+                      "type": "select"
+                    },
+                    {
+                      "action": {
+                        "id": "cell.set",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-139"
+                        }
+                      },
+                      "options": {
+                        "id": "cell.options",
+                        "label": "Change Priority",
+                        "params": {
+                          "field": "priority",
+                          "key": "ATL-139"
+                        }
+                      },
+                      "text": "Medium",
+                      "type": "select"
+                    }
+                  ]
+                }
+              ],
+              "type": "table"
+            }
+          ],
+          "key": "layer-0-links",
+          "open": true,
+          "subtitle": "3 items",
+          "title": "Linked work items",
+          "type": "section"
         }
       ],
       "key": "layer-0",

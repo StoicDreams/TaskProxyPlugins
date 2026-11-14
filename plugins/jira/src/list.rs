@@ -18,6 +18,8 @@ use taskproxy_plugin_sdk::{
 };
 
 const PAGE_SIZE: u64 = 50;
+/// The most searches one page of My Issues makes to fill itself, when finished subtasks are left out.
+const MAX_FILL_REQUESTS: usize = 5;
 /// The issue, its parent, and its grandparent.
 pub const LAYERS: usize = 3;
 const FILTER_OPTIONS_KEY: &str = "filterOptions";
@@ -716,6 +718,33 @@ fn filter_choices(jira: &Jira, options: &Map<String, Value>, name: &str) -> Resu
         .unwrap_or_default())
 }
 
+/// Leaves out finished issues, unless they are subtasks whose parent is not finished yet.
+fn keep_unfinished_parents(jira: &Jira, issues: &mut Vec<Value>) -> Result<()> {
+    let parent_keys = unique(
+        issues
+            .iter()
+            .filter(|issue| is_finished(issue))
+            .filter_map(|issue| parent_key(issue).map(String::from)),
+    );
+    let finished_parents: Vec<String> = fetch(
+        jira,
+        &parent_keys,
+        &["resolution".to_string(), "status".to_string()],
+    )?
+    .iter()
+    .filter(|parent| is_finished(parent))
+    .map(|parent| key_of(parent).to_string())
+    .collect();
+    issues.retain(|issue| {
+        !is_finished(issue)
+            || parent_key(issue).is_some_and(|parent| {
+                parent_keys.iter().any(|key| key == parent)
+                    && !finished_parents.iter().any(|key| key == parent)
+            })
+    });
+    Ok(())
+}
+
 /// The page: the search form, the column chooser, saved searches, the table, and paging.
 pub fn page(
     jira: &Jira,
@@ -751,43 +780,58 @@ pub fn page(
             first.push(always.into());
         }
     }
-    let mut body = json!({
-        "jql": search_jql(list, page_params, fields),
-        "maxResults": PAGE_SIZE,
-        "fields": first,
-    });
-    if !token.is_empty() {
-        body["nextPageToken"] = json!(token);
-    }
-    let found = jira.post("search/jql", &body)?;
-    let mut issues = issues_of(&found);
     // My Issues' own search also finds finished subtasks, which stay only while their parent is not finished.
-    let mut waiting = 0;
-    if list == List::Mine && param(page_params, "jql").trim().is_empty() {
-        let parent_keys = unique(
-            issues
-                .iter()
-                .filter(|issue| is_finished(issue))
-                .filter_map(|issue| parent_key(issue).map(String::from)),
-        );
-        let finished_parents: Vec<String> = fetch(
-            jira,
-            &parent_keys,
-            &["resolution".to_string(), "status".to_string()],
-        )?
-        .iter()
-        .filter(|parent| is_finished(parent))
-        .map(|parent| key_of(parent).to_string())
-        .collect();
-        issues.retain(|issue| {
-            !is_finished(issue)
-                || parent_key(issue).is_some_and(|parent| {
-                    parent_keys.iter().any(|key| key == parent)
-                        && !finished_parents.iter().any(|key| key == parent)
-                })
+    let filtered = list == List::Mine && param(page_params, "jql").trim().is_empty();
+    let search = search_jql(list, page_params, fields);
+    let mut issues: Vec<Value> = Vec::new();
+    let mut token = token.to_string();
+    let first_token = token.clone();
+    // Issues left out leave the page short, so further pages are read, each for only as many as are still
+    // needed, until the page is full or Jira has no more. A few requests at most, since each costs a round trip.
+    let mut found;
+    let mut requests = 0;
+    loop {
+        requests += 1;
+        let mut body = json!({
+            "jql": search,
+            "maxResults": PAGE_SIZE - issues.len() as u64,
+            "fields": first,
         });
-        waiting = issues.iter().filter(|issue| is_finished(issue)).count();
+        if !token.is_empty() {
+            body["nextPageToken"] = json!(token);
+        }
+        found = jira.post("search/jql", &body)?;
+        let mut page_issues = issues_of(&found);
+        if filtered {
+            keep_unfinished_parents(jira, &mut page_issues)?;
+        }
+        issues.extend(page_issues);
+        let next = found
+            .get("nextPageToken")
+            .and_then(Value::as_str)
+            .filter(|_| {
+                !found
+                    .get("isLast")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            });
+        match next {
+            Some(next)
+                if filtered
+                    && (issues.len() as u64) < PAGE_SIZE
+                    && requests < MAX_FILL_REQUESTS =>
+            {
+                token = next.to_string();
+            }
+            _ => break,
+        }
     }
+    let token = first_token;
+    let waiting = if filtered {
+        issues.iter().filter(|issue| is_finished(issue)).count()
+    } else {
+        0
+    };
     let want_parents = uses(1) || uses(2);
     let parents = if want_parents {
         let keys = unique(
@@ -1953,6 +1997,49 @@ mod tests {
         // A search the user wrote shows what it finds.
         let own = shown(List::Mine, json!({ "jql": "project = IR" }));
         assert!(own.contains("IR-20"));
+    }
+
+    #[test]
+    fn my_issues_reads_on_when_finished_subtasks_leave_the_page_short() {
+        let host = connected();
+        host.answer("GET", "/rest/api/3/field", 200, sample_fields());
+        let done = json!({ "name": "Done", "statusCategory": { "key": "done" } });
+        let open = json!({ "name": "To Do", "statusCategory": { "key": "new" } });
+        host.answer_when(
+            "POST",
+            "/rest/api/3/search/jql",
+            "key in",
+            200,
+            json!({ "isLast": true, "issues": [
+            { "key": "IR-2", "fields": { "status": done, "resolution": { "name": "Done" } } }
+        ] }),
+        );
+        // The second page, asked for only once the first came up short.
+        host.answer_when("POST", "/rest/api/3/search/jql", r#""nextPageToken":"p2""#, 200, json!({ "isLast": true, "issues": [
+            { "key": "IR-40", "fields": { "summary": "Later work", "status": open, "resolution": null } }
+        ] }));
+        host.answer("POST", "/rest/api/3/search/jql", 200, json!({ "isLast": false, "nextPageToken": "p2", "issues": [
+            { "key": "IR-20", "fields": { "summary": "Development", "status": done, "resolution": { "name": "Done" }, "parent": { "key": "IR-2" } } },
+            { "key": "IR-30", "fields": { "summary": "Open work", "status": open, "resolution": null } }
+        ] }));
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        let node = page(&jira, &fields, List::Mine, json!({}).as_object().unwrap()).unwrap();
+        let shown = serde_json::to_value(&node).unwrap().to_string();
+        assert!(shown.contains("IR-30") && shown.contains("IR-40"));
+        assert!(!shown.contains("IR-20"), "its parent is finished");
+        assert!(!shown.contains("Next 50"), "Jira has no more");
+        let searches: Vec<String> = host
+            .sent
+            .borrow()
+            .iter()
+            .filter_map(|sent| sent.body.clone())
+            .filter(|body| body.contains("currentUser"))
+            .collect();
+        assert_eq!(searches.len(), 2);
+        assert!(searches[0].contains(r#""maxResults":50"#));
+        // Only as many as the page still needs.
+        assert!(searches[1].contains(r#""maxResults":49"#));
     }
 
     #[test]

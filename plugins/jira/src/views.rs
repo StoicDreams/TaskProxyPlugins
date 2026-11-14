@@ -31,33 +31,109 @@ pub struct View {
     /// hides them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subtasks: Vec<Option<Vec<String>>>,
+    /// The fields shown for each layer's linked work items, as `subtasks` is for subtasks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<Option<Vec<String>>>,
 }
 
 /// The fields Jira shows for subtasks, after the key and summary.
 pub const SUBTASK_FIELDS: [&str; 4] = ["priority", STORY_POINTS, "assignee", "status"];
+/// The fields Jira shows for linked work items, after the key and summary.
+pub const LINK_FIELDS: [&str; 3] = ["status", "assignee", "priority"];
+
+/// Work listed under each layer of a View, each kind with its own fields.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Related {
+    Subtasks,
+    Links,
+}
+
+impl Related {
+    const ALL: [Related; 2] = [Related::Subtasks, Related::Links];
+
+    /// Jira's own fields for this kind.
+    pub fn defaults(self) -> Vec<String> {
+        match self {
+            Related::Subtasks => SUBTASK_FIELDS.map(String::from).to_vec(),
+            Related::Links => LINK_FIELDS.map(String::from).to_vec(),
+        }
+    }
+
+    /// The name in section keys and action params.
+    fn id(self) -> &'static str {
+        match self {
+            Related::Subtasks => "subtasks",
+            Related::Links => "links",
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Related::Subtasks => "Subtasks",
+            Related::Links => "Linked work items",
+        }
+    }
+
+    /// The kind an editor action is for: `sub` marks subtasks, and `related` names either.
+    fn from_params(params: &serde_json::Map<String, Value>) -> Option<Related> {
+        if params.get("sub").and_then(Value::as_bool) == Some(true) {
+            return Some(Related::Subtasks);
+        }
+        match params.get("related").and_then(Value::as_str) {
+            Some("subtasks") => Some(Related::Subtasks),
+            Some("links") => Some(Related::Links),
+            _ => None,
+        }
+    }
+}
 
 impl View {
-    /// The fields shown for a layer's subtasks, or none when they are hidden.
-    pub fn subtask_fields(&self, depth: usize) -> Vec<String> {
-        match self.subtasks.get(depth).cloned().flatten() {
+    fn related(&self, kind: Related) -> &Vec<Option<Vec<String>>> {
+        match kind {
+            Related::Subtasks => &self.subtasks,
+            Related::Links => &self.links,
+        }
+    }
+
+    fn related_mut(&mut self, kind: Related) -> &mut Vec<Option<Vec<String>>> {
+        match kind {
+            Related::Subtasks => &mut self.subtasks,
+            Related::Links => &mut self.links,
+        }
+    }
+
+    /// The fields shown for a layer's subtasks or linked work items, or none when they are hidden.
+    pub fn related_fields(&self, kind: Related, depth: usize) -> Vec<String> {
+        match self.related(kind).get(depth).cloned().flatten() {
             Some(fields) => fields,
-            None => SUBTASK_FIELDS.map(String::from).to_vec(),
+            None => kind.defaults(),
         }
     }
 
-    /// Whether a layer's subtask fields were chosen, rather than Jira's.
-    fn custom_subtasks(&self, depth: usize) -> Option<&Vec<String>> {
-        self.subtasks.get(depth).and_then(Option::as_ref)
+    /// The fields chosen for a layer's subtasks or linked work items, or `None` while they are Jira's.
+    fn custom_related(&self, kind: Related, depth: usize) -> Option<&Vec<String>> {
+        self.related(kind).get(depth).and_then(Option::as_ref)
     }
 
+    fn set_related(&mut self, kind: Related, depth: usize, fields: Option<Vec<String>>) {
+        let list = self.related_mut(kind);
+        if list.len() <= depth {
+            list.resize(depth + 1, None);
+        }
+        list[depth] = fields;
+        while list.last().is_some_and(Option::is_none) {
+            list.pop();
+        }
+    }
+
+    #[cfg(test)]
+    fn subtask_fields(&self, depth: usize) -> Vec<String> {
+        self.related_fields(Related::Subtasks, depth)
+    }
+
+    #[cfg(test)]
     fn set_subtasks(&mut self, depth: usize, fields: Option<Vec<String>>) {
-        if self.subtasks.len() <= depth {
-            self.subtasks.resize(depth + 1, None);
-        }
-        self.subtasks[depth] = fields;
-        while self.subtasks.last().is_some_and(Option::is_none) {
-            self.subtasks.pop();
-        }
+        self.set_related(Related::Subtasks, depth, fields);
     }
 }
 
@@ -109,6 +185,7 @@ pub fn default_view() -> View {
                 .to_vec(),
         ],
         subtasks: Vec::new(),
+        links: Vec::new(),
     }
 }
 
@@ -247,7 +324,14 @@ pub fn layers(jira: &Jira, fields: &Fields, view: &View, key: &str) -> Result<(V
                 .filter_map(|id| resolve(id, fields))
                 .collect::<Vec<_>>(),
         );
-        for always in ["summary", "issuetype", "parent", "status", "subtasks"] {
+        for always in [
+            "summary",
+            "issuetype",
+            "parent",
+            "status",
+            "subtasks",
+            "issuelinks",
+        ] {
             if !wanted.iter().any(|id| id == always) {
                 wanted.push(always.to_string());
             }
@@ -289,6 +373,9 @@ pub fn layers(jira: &Jira, fields: &Fields, view: &View, key: &str) -> Result<(V
         let mut children = vec![Node::Properties { items }];
         if let Some(table) = subtasks(jira, fields, view, depth, &issue_key, &issue_fields)? {
             children.push(table);
+        }
+        if let Some(links) = linked(jira, fields, view, depth, &issue_fields)? {
+            children.push(links);
         }
         if depth > 0 {
             children.push(ui::link(
@@ -435,25 +522,11 @@ fn subtasks(
         .and_then(Value::as_array)
         .map(Vec::len)
         .unwrap_or(0);
-    let chosen = view.subtask_fields(depth);
+    let chosen = view.related_fields(Related::Subtasks, depth);
     if listed == 0 || chosen.is_empty() {
         return Ok(None);
     }
-    let resolved: Vec<(String, String)> = chosen
-        .iter()
-        .filter_map(|id| Some((id.clone(), resolve(id, fields)?)))
-        .collect();
-    let mut wanted = fields.wanted(
-        &resolved
-            .iter()
-            .map(|(_, real)| real.clone())
-            .collect::<Vec<_>>(),
-    );
-    for always in ["summary", "status", "resolution"] {
-        if !wanted.iter().any(|id| id == always) {
-            wanted.push(always.into());
-        }
-    }
+    let (resolved, wanted) = related_fields(fields, &chosen, &["summary", "status", "resolution"]);
     let found = jira.post(
         "search/jql",
         &json!({ "jql": format!("parent = \"{}\" ORDER BY created ASC", key), "fields": wanted, "maxResults": 100 }),
@@ -467,34 +540,6 @@ fn subtasks(
         .iter()
         .filter(|issue| list::is_finished(issue))
         .count();
-    let mut columns: Vec<ui::Column> = vec!["Work".into()];
-    columns.extend(
-        resolved
-            .iter()
-            .map(|(id, _)| field_label(id, fields).into()),
-    );
-    let rows =
-        issues
-            .iter()
-            .map(|issue| {
-                let sub_key = issue.get("key").and_then(Value::as_str).unwrap_or("");
-                let summary = issue
-                    .pointer("/fields/summary")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                let mut cells = vec![ui::row(vec![
-                    ui::link(sub_key, crate::pages::open_issue(sub_key)),
-                    ui::clip(summary, None),
-                ])];
-                cells.extend(resolved.iter().map(|(id, real)| {
-                    list::cell(fields, real, &field_label(id, fields), Some(issue))
-                }));
-                ui::TableRow {
-                    cells,
-                    action: None,
-                }
-            })
-            .collect();
     let total = issues.len();
     Ok(Some(Node::Section {
         key: format!("layer-{}-subtasks", depth),
@@ -506,23 +551,172 @@ fn subtasks(
             (done * 100).checked_div(total).unwrap_or(0)
         )),
         open: true,
-        children: vec![Node::Table { columns, rows }],
+        children: vec![work_table(fields, &resolved, issues.iter())],
     }))
 }
 
-/// The field list an editor action changes: a layer's own fields, or its subtasks', which start as Jira's.
-fn edited_list(draft: &mut Draft, depth: usize, sub: bool) -> Option<&mut Vec<String>> {
+/// The ids chosen for a list of related work, with the site's id for each, and the fields to ask Jira for.
+fn related_fields(
+    fields: &Fields,
+    chosen: &[String],
+    always: &[&str],
+) -> (Vec<(String, String)>, Vec<String>) {
+    let resolved: Vec<(String, String)> = chosen
+        .iter()
+        .filter_map(|id| Some((id.clone(), resolve(id, fields)?)))
+        .collect();
+    let mut wanted = fields.wanted(
+        &resolved
+            .iter()
+            .map(|(_, real)| real.clone())
+            .collect::<Vec<_>>(),
+    );
+    for always in always {
+        if !wanted.iter().any(|id| id == always) {
+            wanted.push((*always).into());
+        }
+    }
+    (resolved, wanted)
+}
+
+/// A table of related work as Jira lists it: the key and summary, then the chosen fields, which change in place.
+fn work_table<'a>(
+    fields: &Fields,
+    resolved: &[(String, String)],
+    issues: impl Iterator<Item = &'a Value>,
+) -> Node {
+    let mut columns: Vec<ui::Column> = vec!["Work".into()];
+    columns.extend(
+        resolved
+            .iter()
+            .map(|(id, _)| field_label(id, fields).into()),
+    );
+    let rows =
+        issues
+            .map(|issue| {
+                let key = issue.get("key").and_then(Value::as_str).unwrap_or("");
+                let summary = issue
+                    .pointer("/fields/summary")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let mut cells = vec![ui::row(vec![
+                    ui::link(key, crate::pages::open_issue(key)),
+                    ui::clip(summary, None),
+                ])];
+                cells.extend(resolved.iter().map(|(id, real)| {
+                    list::cell(fields, real, &field_label(id, fields), Some(issue))
+                }));
+                ui::TableRow {
+                    cells,
+                    action: None,
+                }
+            })
+            .collect();
+    Node::Table { columns, rows }
+}
+
+/// A layer's linked work items, as Jira shows them: grouped by how they are linked, such as "is blocked by", each
+/// group a table with the View's fields, which change in place. `None` when the issue has no links or the View
+/// hides them.
+fn linked(
+    jira: &Jira,
+    fields: &Fields,
+    view: &View,
+    depth: usize,
+    issue_fields: &Value,
+) -> Result<Option<Node>> {
+    let links = issue_fields
+        .get("issuelinks")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let chosen = view.related_fields(Related::Links, depth);
+    if links.is_empty() || chosen.is_empty() {
+        return Ok(None);
+    }
+    // Each link names the other issue on its inward or outward side, with words for that direction.
+    let mut groups: Vec<(String, Vec<Value>)> = Vec::new();
+    for link in &links {
+        let (side, words) = if let Some(other) = link.get("inwardIssue") {
+            (other, "/type/inward")
+        } else if let Some(other) = link.get("outwardIssue") {
+            (other, "/type/outward")
+        } else {
+            continue;
+        };
+        let relation = link
+            .pointer(words)
+            .and_then(Value::as_str)
+            .unwrap_or("relates to")
+            .to_string();
+        match groups.iter_mut().find(|(name, _)| *name == relation) {
+            Some((_, items)) => items.push(side.clone()),
+            None => groups.push((relation, vec![side.clone()])),
+        }
+    }
+    if groups.is_empty() {
+        return Ok(None);
+    }
+    // Links carry only a few fields, so the chosen ones are read for every linked issue at once.
+    let (resolved, wanted) = related_fields(fields, &chosen, &["summary", "status"]);
+    let keys: Vec<String> = groups
+        .iter()
+        .flat_map(|(_, items)| items.iter())
+        .filter_map(|item| item.get("key").and_then(Value::as_str))
+        .map(|key| format!("\"{}\"", key))
+        .collect();
+    let found = jira.post(
+        "search/jql",
+        &json!({ "jql": format!("key in ({})", keys.join(", ")), "fields": wanted, "maxResults": 100 }),
+    )?;
+    let issues: Vec<Value> = found
+        .get("issues")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let full = |item: &Value| -> Value {
+        let key = item.get("key").and_then(Value::as_str);
+        issues
+            .iter()
+            .find(|issue| issue.get("key").and_then(Value::as_str) == key)
+            // An issue the search leaves out, such as one the user cannot see, shows what the link carries.
+            .cloned()
+            .unwrap_or_else(|| item.clone())
+    };
+    let mut children = Vec::new();
+    for (relation, items) in &groups {
+        children.push(ui::heading(relation.clone(), 4));
+        let rows: Vec<Value> = items.iter().map(full).collect();
+        children.push(work_table(fields, &resolved, rows.iter()));
+    }
+    let total: usize = groups.iter().map(|(_, items)| items.len()).sum();
+    Ok(Some(Node::Section {
+        key: format!("layer-{}-links", depth),
+        title: Related::Links.title().into(),
+        subtitle: Some(if total == 1 {
+            "1 item".into()
+        } else {
+            format!("{} items", total)
+        }),
+        open: true,
+        children,
+    }))
+}
+
+/// The field list an editor action changes: a layer's own fields, or its subtasks' or linked work items', which
+/// start as Jira's.
+fn edited_list(draft: &mut Draft, depth: usize, kind: Option<Related>) -> Option<&mut Vec<String>> {
     if depth >= draft.view.layers.len() {
         return None;
     }
-    if !sub {
+    let Some(kind) = kind else {
         return draft.view.layers.get_mut(depth);
+    };
+    if draft.view.custom_related(kind, depth).is_none() {
+        let fields = draft.view.related_fields(kind, depth);
+        draft.view.set_related(kind, depth, Some(fields));
     }
-    if draft.view.custom_subtasks(depth).is_none() {
-        let fields = draft.view.subtask_fields(depth);
-        draft.view.set_subtasks(depth, Some(fields));
-    }
-    draft.view.subtasks.get_mut(depth)?.as_mut()
+    draft.view.related_mut(kind).get_mut(depth)?.as_mut()
 }
 
 /// The editor's list of fields, with buttons to order and remove them, and a form to add one.
@@ -531,20 +725,21 @@ fn field_list(
     fields: &Fields,
     depth: usize,
     list: &[String],
-    sub: bool,
+    kind: Option<Related>,
     empty: &str,
 ) -> Vec<Node> {
+    let mark = |action: Action| match kind {
+        Some(kind) => action.param("related", kind.id()),
+        None => action,
+    };
     let mut items: Vec<Node> = Vec::new();
     for (index, id) in list.iter().enumerate() {
         let at = |action: &str, label: &str| {
-            let action = Action::new(action, label)
-                .param("layer", depth)
-                .param("index", index);
-            if sub {
-                action.param("sub", true)
-            } else {
-                action
-            }
+            mark(
+                Action::new(action, label)
+                    .param("layer", depth)
+                    .param("index", index),
+            )
         };
         let mut line = vec![ui::text(field_label(id, fields))];
         if index > 0 {
@@ -570,13 +765,81 @@ fn field_list(
     let add = Action::new("draft.add", "Add").param("layer", depth);
     items.push(Node::Form {
         fields: vec![Field::new(FieldKind::Select, "field", "Add a field").options(available)],
-        submit: if sub { add.param("sub", true) } else { add },
+        submit: mark(add),
         cancel: None,
         buttons: Vec::new(),
         children: Vec::new(),
         inline: false,
     });
     items
+}
+
+/// The editor for a layer's subtasks or linked work items: Jira's fields until others are chosen, or hidden.
+fn related_editor(
+    choices: &[Choice],
+    fields: &Fields,
+    draft: &Draft,
+    depth: usize,
+    kind: Related,
+) -> Node {
+    let (one, many) = match kind {
+        Related::Subtasks => ("subtask", "Subtasks"),
+        Related::Links => ("linked work item", "Linked work items"),
+    };
+    let chosen = draft.view.related_fields(kind, depth);
+    let custom = draft.view.custom_related(kind, depth).is_some();
+    let mut items = if chosen.is_empty() {
+        vec![ui::muted(format!("{} are hidden for this layer.", many))]
+    } else {
+        let mut note = vec![ui::muted(if custom {
+            format!("Shown after each {}'s key and summary.", one)
+        } else {
+            format!(
+                "The fields Jira shows, after each {}'s key and summary. Change them to choose your own.",
+                one
+            )
+        })];
+        note.extend(field_list(
+            choices,
+            fields,
+            depth,
+            &chosen,
+            Some(kind),
+            "No fields.",
+        ));
+        note
+    };
+    let at = |action: &str, label: &str| {
+        Action::new(action, label)
+            .param("layer", depth)
+            .param("related", kind.id())
+    };
+    let lower = many.to_lowercase();
+    let mut links = Vec::new();
+    if custom && !chosen.is_empty() {
+        links.push(ui::link(
+            "Use Jira's fields",
+            at("draft.relatedReset", "Use Jira's fields"),
+        ));
+    }
+    links.push(if chosen.is_empty() {
+        ui::link(
+            format!("Show {}", lower),
+            at("draft.relatedReset", &format!("Show {}", lower)),
+        )
+    } else {
+        ui::link(
+            format!("Hide {}", lower),
+            at("draft.relatedHide", &format!("Hide {}", lower)),
+        )
+    });
+    items.push(ui::row(links));
+    ui::section(
+        format!("edit-layer-{}-{}", depth, kind.id()),
+        kind.title(),
+        false,
+        items,
+    )
 }
 
 fn editor(host: &dyn Host, fields: &Fields, draft: &Draft) -> Node {
@@ -598,48 +861,10 @@ fn editor(host: &dyn Host, fields: &Fields, draft: &Draft) -> Node {
         2,
     )];
     for (depth, layer) in draft.view.layers.iter().enumerate() {
-        let mut items = field_list(&choices, fields, depth, layer, false, "No fields yet.");
-        // The layer's subtasks: Jira's fields until others are chosen, or hidden.
-        let sub_fields = draft.view.subtask_fields(depth);
-        let custom = draft.view.custom_subtasks(depth).is_some();
-        let mut sub_items = if sub_fields.is_empty() {
-            vec![ui::muted("Subtasks are hidden for this layer.")]
-        } else {
-            let mut note = vec![ui::muted(if custom {
-                "Shown after each subtask's key and summary."
-            } else {
-                "The fields Jira shows, after each subtask's key and summary. Change them to choose your own."
-            })];
-            note.extend(field_list(
-                &choices,
-                fields,
-                depth,
-                &sub_fields,
-                true,
-                "No fields.",
-            ));
-            note
-        };
-        let at = |action: &str, label: &str| Action::new(action, label).param("layer", depth);
-        let mut links = Vec::new();
-        if custom && !sub_fields.is_empty() {
-            links.push(ui::link(
-                "Use Jira's fields",
-                at("draft.subtasksReset", "Use Jira's fields"),
-            ));
+        let mut items = field_list(&choices, fields, depth, layer, None, "No fields yet.");
+        for kind in Related::ALL {
+            items.push(related_editor(&choices, fields, draft, depth, kind));
         }
-        links.push(if sub_fields.is_empty() {
-            ui::link("Show subtasks", at("draft.subtasksReset", "Show subtasks"))
-        } else {
-            ui::link("Hide subtasks", at("draft.subtasksHide", "Hide subtasks"))
-        });
-        sub_items.push(ui::row(links));
-        items.push(ui::section(
-            format!("edit-layer-{}-subtasks", depth),
-            "Subtasks",
-            false,
-            sub_items,
-        ));
         if depth > 0 {
             items.push(ui::link(
                 format!("Remove the {} layer", layer_name(depth).to_lowercase()),
@@ -779,13 +1004,13 @@ pub fn action(
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let sub = params.get("sub").and_then(Value::as_bool).unwrap_or(false);
+            let kind = Related::from_params(params);
             if field.is_empty() {
                 return Ok(Some(
                     ActionResult::default().with_message("Choose a field to add.", "warning"),
                 ));
             }
-            let layer = edited_list(&mut draft, param_usize(params, "layer"), sub)
+            let layer = edited_list(&mut draft, param_usize(params, "layer"), kind)
                 .ok_or_else(|| Error::new("That layer no longer exists."))?;
             if !layer.contains(&field) {
                 layer.push(field);
@@ -796,8 +1021,8 @@ pub fn action(
         "draft.move" | "draft.remove" => {
             let mut draft = draft()?;
             let index = param_usize(params, "index");
-            let sub = params.get("sub").and_then(Value::as_bool).unwrap_or(false);
-            if let Some(layer) = edited_list(&mut draft, param_usize(params, "layer"), sub)
+            let kind = Related::from_params(params);
+            if let Some(layer) = edited_list(&mut draft, param_usize(params, "layer"), kind)
                 && index < layer.len()
             {
                 if request.action == "draft.remove" {
@@ -830,16 +1055,22 @@ pub fn action(
             if layer > 0 && layer < draft.view.layers.len() {
                 draft.view.layers.truncate(layer);
                 draft.view.subtasks.truncate(layer);
+                draft.view.links.truncate(layer);
             }
             save_draft(host, Some(&draft))?;
             ActionResult::ui(editor(host, fields, &draft))
         }
-        "draft.subtasksHide" | "draft.subtasksReset" => {
+        // The subtasks names come from before linked work items, when they were the only kind.
+        "draft.subtasksHide"
+        | "draft.subtasksReset"
+        | "draft.relatedHide"
+        | "draft.relatedReset" => {
             let mut draft = draft()?;
             let layer = param_usize(params, "layer");
+            let kind = Related::from_params(params).unwrap_or(Related::Subtasks);
             if layer < draft.view.layers.len() {
-                let hidden = request.action == "draft.subtasksHide";
-                draft.view.set_subtasks(layer, hidden.then(Vec::new));
+                let hidden = request.action.ends_with("Hide");
+                draft.view.set_related(kind, layer, hidden.then(Vec::new));
             }
             save_draft(host, Some(&draft))?;
             ActionResult::ui(editor(host, fields, &draft))
@@ -932,7 +1163,7 @@ mod tests {
         host.answer("GET", "/rest/api/3/field", 200, sample_fields());
         host.answer(
             "GET",
-            "/rest/api/3/issue/P-3?fields=status,customfield_10016,customfield_10026,summary,issuetype,parent,subtasks",
+            "/rest/api/3/issue/P-3?fields=status,customfield_10016,customfield_10026,summary,issuetype,parent,subtasks,issuelinks",
             200,
             json!({ "key": "P-3", "fields": {
                 "summary": "Fix login", "issuetype": { "name": "Task" },
@@ -942,7 +1173,7 @@ mod tests {
         );
         host.answer(
             "GET",
-            "/rest/api/3/issue/P-2?fields=description,summary,issuetype,parent,status,subtasks",
+            "/rest/api/3/issue/P-2?fields=description,summary,issuetype,parent,status,subtasks,issuelinks",
             200,
             json!({ "key": "P-2", "fields": {
                 "summary": "Sign in", "issuetype": { "name": "Story" }, "parent": { "key": "P-1" },
@@ -959,6 +1190,7 @@ mod tests {
                 vec!["description".into()],
             ],
             subtasks: Vec::new(),
+            links: Vec::new(),
         };
         let (issue, sections) = layers(&jira, &fields, &view, "P-3").unwrap();
         assert_eq!(issue["key"], "P-3");
@@ -1029,6 +1261,7 @@ mod tests {
             name: "V".into(),
             layers: vec![vec!["status".into()]],
             subtasks: Vec::new(),
+            links: Vec::new(),
         };
         let table = |view: &View| -> Option<Value> {
             let (_, sections) = layers(&jira, &fields, view, "IR-1").unwrap();
@@ -1070,6 +1303,134 @@ mod tests {
         assert!(
             saved.get("subtasks").is_none(),
             "older Views read back unchanged"
+        );
+    }
+
+    #[test]
+    fn linked_work_items_show_by_how_they_are_linked_with_jiras_fields_or_the_views_own() {
+        let host = FakeHost::connected();
+        host.answer("GET", "/rest/api/3/field", 200, sample_fields());
+        let blocks = json!({ "name": "Blocks", "inward": "is blocked by", "outward": "blocks" });
+        host.answer("GET", "/rest/api/3/issue/IR-1", 200, json!({ "key": "IR-1", "fields": {
+            "summary": "Story", "issuetype": { "name": "Story" }, "status": { "name": "Backlog" },
+            "issuelinks": [
+                { "type": blocks, "inwardIssue": { "key": "IR-9604", "fields": { "summary": "Quick Links" } } },
+                { "type": blocks, "outwardIssue": { "key": "IR-7", "fields": { "summary": "Release", "status": { "name": "To Do" } } } },
+                { "type": blocks, "inwardIssue": { "key": "IR-11612", "fields": { "summary": "Provider Role" } } }
+            ]
+        } }));
+        // IR-7 is not found, as for an issue the user cannot see, so it shows what the link carries.
+        host.answer_when("POST", "/rest/api/3/search/jql", "key in", 200, json!({ "isLast": true, "issues": [
+            { "key": "IR-9604", "fields": { "summary": "Create Client Configurable Quick Links", "status": { "name": "Backlog" }, "assignee": { "displayName": "Erik" }, "priority": { "name": "Medium" } } },
+            { "key": "IR-11612", "fields": { "summary": "Create Provider Role for Quick Links", "status": { "name": "Backlog" } } }
+        ] }));
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        let mut view = View {
+            id: "v".into(),
+            name: "V".into(),
+            layers: vec![vec!["status".into()]],
+            subtasks: Vec::new(),
+            links: Vec::new(),
+        };
+        let section = |view: &View| -> Option<Value> {
+            let (_, sections) = layers(&jira, &fields, view, "IR-1").unwrap();
+            let section = serde_json::to_value(&sections[0]).unwrap();
+            section["children"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|child| child["title"] == "Linked work items")
+                .cloned()
+        };
+        let linked = section(&view).unwrap();
+        assert_eq!(linked["subtitle"], "3 items");
+        let children = linked["children"].as_array().unwrap();
+        assert_eq!(children[0]["text"], "is blocked by");
+        assert_eq!(
+            children[1]["columns"],
+            json!(["Work", "Status", "Assignee", "Priority"])
+        );
+        let rows = children[1]["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["cells"][0]["children"][0]["text"], "IR-9604");
+        assert_eq!(
+            rows[0]["cells"][0]["children"][1]["text"],
+            "Create Client Configurable Quick Links"
+        );
+        assert_eq!(rows[1]["cells"][0]["children"][0]["text"], "IR-11612");
+        assert_eq!(children[2]["text"], "blocks");
+        assert_eq!(
+            children[3]["rows"][0]["cells"][0]["children"][1]["text"],
+            "Release"
+        );
+        // One search finds every linked issue.
+        let searches: Vec<String> = host
+            .sent
+            .borrow()
+            .iter()
+            .filter_map(|sent| sent.body.clone())
+            .filter(|body| body.contains("key in"))
+            .collect();
+        assert_eq!(searches.len(), 1);
+        assert!(searches[0].contains(r#"key in (\"IR-9604\", \"IR-11612\", \"IR-7\")"#));
+        view.set_related(Related::Links, 0, Some(vec!["assignee".into()]));
+        assert_eq!(
+            section(&view).unwrap()["children"][1]["columns"],
+            json!(["Work", "Assignee"])
+        );
+        view.set_related(Related::Links, 0, Some(Vec::new()));
+        assert!(section(&view).is_none());
+    }
+
+    #[test]
+    fn the_editor_chooses_each_layers_linked_work_item_fields() {
+        let host = FakeHost::connected();
+        act(&host, "views.new", json!({}), json!({}));
+        let shown = act(
+            &host,
+            "draft.add",
+            json!({ "layer": 0, "related": "links" }),
+            json!({ "field": "summary" }),
+        );
+        assert!(
+            serde_json::to_string(&shown.ui)
+                .unwrap()
+                .contains("edit-layer-0-links")
+        );
+        let draft = read_draft(&host).unwrap().unwrap();
+        let mut expected: Vec<String> = LINK_FIELDS.map(String::from).to_vec();
+        expected.push("summary".into());
+        assert_eq!(draft.view.related_fields(Related::Links, 0), expected);
+        assert_eq!(
+            draft.view.subtask_fields(0),
+            SUBTASK_FIELDS.map(String::from).to_vec(),
+            "subtasks are unchanged"
+        );
+        let hidden = act(
+            &host,
+            "draft.relatedHide",
+            json!({ "layer": 0, "related": "links" }),
+            json!({}),
+        );
+        assert!(
+            serde_json::to_string(&hidden.ui)
+                .unwrap()
+                .contains("Linked work items are hidden")
+        );
+        act(
+            &host,
+            "draft.relatedReset",
+            json!({ "layer": 0, "related": "links" }),
+            json!({}),
+        );
+        assert_eq!(
+            read_draft(&host)
+                .unwrap()
+                .unwrap()
+                .view
+                .related_fields(Related::Links, 0),
+            LINK_FIELDS.map(String::from).to_vec()
         );
     }
 
@@ -1145,7 +1506,7 @@ mod tests {
         host.answer("GET", "/rest/api/3/field", 200, sample_fields());
         host.answer(
             "GET",
-            "/rest/api/3/issue/P-1?fields=status,assignee,description,summary,issuetype,parent,subtasks",
+            "/rest/api/3/issue/P-1?fields=status,assignee,description,summary,issuetype,parent,subtasks,issuelinks",
             200,
             json!({ "key": "P-1", "fields": { "summary": "Epic", "issuetype": { "name": "Epic" } } }),
         );

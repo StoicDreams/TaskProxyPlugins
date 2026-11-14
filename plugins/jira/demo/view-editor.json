@@ -430,7 +430,7 @@
                       "by": 1,
                       "index": 0,
                       "layer": 0,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Down",
@@ -443,7 +443,7 @@
                     "params": {
                       "index": 0,
                       "layer": 0,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -466,7 +466,7 @@
                       "by": -1,
                       "index": 1,
                       "layer": 0,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Up",
@@ -480,7 +480,7 @@
                       "by": 1,
                       "index": 1,
                       "layer": 0,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Down",
@@ -493,7 +493,7 @@
                     "params": {
                       "index": 1,
                       "layer": 0,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -516,7 +516,7 @@
                       "by": -1,
                       "index": 2,
                       "layer": 0,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Up",
@@ -530,7 +530,7 @@
                       "by": 1,
                       "index": 2,
                       "layer": 0,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Down",
@@ -543,7 +543,7 @@
                     "params": {
                       "index": 2,
                       "layer": 0,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -566,7 +566,7 @@
                       "by": -1,
                       "index": 3,
                       "layer": 0,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Up",
@@ -579,7 +579,7 @@
                     "params": {
                       "index": 3,
                       "layer": 0,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -652,7 +652,7 @@
                 "label": "Add",
                 "params": {
                   "layer": 0,
-                  "sub": true
+                  "related": "subtasks"
                 }
               },
               "type": "form"
@@ -661,10 +661,11 @@
               "children": [
                 {
                   "action": {
-                    "id": "draft.subtasksHide",
+                    "id": "draft.relatedHide",
                     "label": "Hide subtasks",
                     "params": {
-                      "layer": 0
+                      "layer": 0,
+                      "related": "subtasks"
                     }
                   },
                   "text": "Hide subtasks",
@@ -677,6 +678,231 @@
           "key": "edit-layer-0-subtasks",
           "open": false,
           "title": "Subtasks",
+          "type": "section"
+        },
+        {
+          "children": [
+            {
+              "muted": true,
+              "text": "The fields Jira shows, after each linked work item's key and summary. Change them to choose your own.",
+              "type": "text"
+            },
+            {
+              "children": [
+                {
+                  "text": "Status",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move down",
+                    "params": {
+                      "by": 1,
+                      "index": 0,
+                      "layer": 0,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Down",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.remove",
+                    "label": "Remove",
+                    "params": {
+                      "index": 0,
+                      "layer": 0,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Remove",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            },
+            {
+              "children": [
+                {
+                  "text": "Assignee",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move up",
+                    "params": {
+                      "by": -1,
+                      "index": 1,
+                      "layer": 0,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Up",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move down",
+                    "params": {
+                      "by": 1,
+                      "index": 1,
+                      "layer": 0,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Down",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.remove",
+                    "label": "Remove",
+                    "params": {
+                      "index": 1,
+                      "layer": 0,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Remove",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            },
+            {
+              "children": [
+                {
+                  "text": "Priority",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move up",
+                    "params": {
+                      "by": -1,
+                      "index": 2,
+                      "layer": 0,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Up",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.remove",
+                    "label": "Remove",
+                    "params": {
+                      "index": 2,
+                      "layer": 0,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Remove",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            },
+            {
+              "fields": [
+                {
+                  "kind": "select",
+                  "label": "Add a field",
+                  "name": "field",
+                  "options": [
+                    {
+                      "label": "Summary",
+                      "value": "summary"
+                    },
+                    {
+                      "label": "Issue Type",
+                      "value": "issuetype"
+                    },
+                    {
+                      "label": "Reporter",
+                      "value": "reporter"
+                    },
+                    {
+                      "label": "Description",
+                      "value": "description"
+                    },
+                    {
+                      "label": "Comment",
+                      "value": "comment"
+                    },
+                    {
+                      "label": "Labels",
+                      "value": "labels"
+                    },
+                    {
+                      "label": "Due date",
+                      "value": "duedate"
+                    },
+                    {
+                      "label": "Created",
+                      "value": "created"
+                    },
+                    {
+                      "label": "Updated",
+                      "value": "updated"
+                    },
+                    {
+                      "label": "Parent",
+                      "value": "parent"
+                    },
+                    {
+                      "label": "Story points",
+                      "value": "storyPoints"
+                    },
+                    {
+                      "label": "Sprint",
+                      "value": "sprint"
+                    },
+                    {
+                      "label": "Acceptance criteria",
+                      "value": "customfield_10050"
+                    }
+                  ],
+                  "value": null
+                }
+              ],
+              "submit": {
+                "id": "draft.add",
+                "label": "Add",
+                "params": {
+                  "layer": 0,
+                  "related": "links"
+                }
+              },
+              "type": "form"
+            },
+            {
+              "children": [
+                {
+                  "action": {
+                    "id": "draft.relatedHide",
+                    "label": "Hide linked work items",
+                    "params": {
+                      "layer": 0,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Hide linked work items",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            }
+          ],
+          "key": "edit-layer-0-links",
+          "open": false,
+          "title": "Linked work items",
           "type": "section"
         }
       ],
@@ -1024,7 +1250,7 @@
                       "by": 1,
                       "index": 0,
                       "layer": 1,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Down",
@@ -1037,7 +1263,7 @@
                     "params": {
                       "index": 0,
                       "layer": 1,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -1060,7 +1286,7 @@
                       "by": -1,
                       "index": 1,
                       "layer": 1,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Up",
@@ -1074,7 +1300,7 @@
                       "by": 1,
                       "index": 1,
                       "layer": 1,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Down",
@@ -1087,7 +1313,7 @@
                     "params": {
                       "index": 1,
                       "layer": 1,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -1110,7 +1336,7 @@
                       "by": -1,
                       "index": 2,
                       "layer": 1,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Up",
@@ -1124,7 +1350,7 @@
                       "by": 1,
                       "index": 2,
                       "layer": 1,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Down",
@@ -1137,7 +1363,7 @@
                     "params": {
                       "index": 2,
                       "layer": 1,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -1160,7 +1386,7 @@
                       "by": -1,
                       "index": 3,
                       "layer": 1,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Up",
@@ -1173,7 +1399,7 @@
                     "params": {
                       "index": 3,
                       "layer": 1,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -1246,7 +1472,7 @@
                 "label": "Add",
                 "params": {
                   "layer": 1,
-                  "sub": true
+                  "related": "subtasks"
                 }
               },
               "type": "form"
@@ -1255,10 +1481,11 @@
               "children": [
                 {
                   "action": {
-                    "id": "draft.subtasksHide",
+                    "id": "draft.relatedHide",
                     "label": "Hide subtasks",
                     "params": {
-                      "layer": 1
+                      "layer": 1,
+                      "related": "subtasks"
                     }
                   },
                   "text": "Hide subtasks",
@@ -1271,6 +1498,231 @@
           "key": "edit-layer-1-subtasks",
           "open": false,
           "title": "Subtasks",
+          "type": "section"
+        },
+        {
+          "children": [
+            {
+              "muted": true,
+              "text": "The fields Jira shows, after each linked work item's key and summary. Change them to choose your own.",
+              "type": "text"
+            },
+            {
+              "children": [
+                {
+                  "text": "Status",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move down",
+                    "params": {
+                      "by": 1,
+                      "index": 0,
+                      "layer": 1,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Down",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.remove",
+                    "label": "Remove",
+                    "params": {
+                      "index": 0,
+                      "layer": 1,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Remove",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            },
+            {
+              "children": [
+                {
+                  "text": "Assignee",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move up",
+                    "params": {
+                      "by": -1,
+                      "index": 1,
+                      "layer": 1,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Up",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move down",
+                    "params": {
+                      "by": 1,
+                      "index": 1,
+                      "layer": 1,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Down",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.remove",
+                    "label": "Remove",
+                    "params": {
+                      "index": 1,
+                      "layer": 1,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Remove",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            },
+            {
+              "children": [
+                {
+                  "text": "Priority",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move up",
+                    "params": {
+                      "by": -1,
+                      "index": 2,
+                      "layer": 1,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Up",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.remove",
+                    "label": "Remove",
+                    "params": {
+                      "index": 2,
+                      "layer": 1,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Remove",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            },
+            {
+              "fields": [
+                {
+                  "kind": "select",
+                  "label": "Add a field",
+                  "name": "field",
+                  "options": [
+                    {
+                      "label": "Summary",
+                      "value": "summary"
+                    },
+                    {
+                      "label": "Issue Type",
+                      "value": "issuetype"
+                    },
+                    {
+                      "label": "Reporter",
+                      "value": "reporter"
+                    },
+                    {
+                      "label": "Description",
+                      "value": "description"
+                    },
+                    {
+                      "label": "Comment",
+                      "value": "comment"
+                    },
+                    {
+                      "label": "Labels",
+                      "value": "labels"
+                    },
+                    {
+                      "label": "Due date",
+                      "value": "duedate"
+                    },
+                    {
+                      "label": "Created",
+                      "value": "created"
+                    },
+                    {
+                      "label": "Updated",
+                      "value": "updated"
+                    },
+                    {
+                      "label": "Parent",
+                      "value": "parent"
+                    },
+                    {
+                      "label": "Story points",
+                      "value": "storyPoints"
+                    },
+                    {
+                      "label": "Sprint",
+                      "value": "sprint"
+                    },
+                    {
+                      "label": "Acceptance criteria",
+                      "value": "customfield_10050"
+                    }
+                  ],
+                  "value": null
+                }
+              ],
+              "submit": {
+                "id": "draft.add",
+                "label": "Add",
+                "params": {
+                  "layer": 1,
+                  "related": "links"
+                }
+              },
+              "type": "form"
+            },
+            {
+              "children": [
+                {
+                  "action": {
+                    "id": "draft.relatedHide",
+                    "label": "Hide linked work items",
+                    "params": {
+                      "layer": 1,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Hide linked work items",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            }
+          ],
+          "key": "edit-layer-1-links",
+          "open": false,
+          "title": "Linked work items",
           "type": "section"
         },
         {
@@ -1414,7 +1866,7 @@
                       "by": 1,
                       "index": 0,
                       "layer": 2,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Down",
@@ -1427,7 +1879,7 @@
                     "params": {
                       "index": 0,
                       "layer": 2,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -1450,7 +1902,7 @@
                       "by": -1,
                       "index": 1,
                       "layer": 2,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Up",
@@ -1464,7 +1916,7 @@
                       "by": 1,
                       "index": 1,
                       "layer": 2,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Down",
@@ -1477,7 +1929,7 @@
                     "params": {
                       "index": 1,
                       "layer": 2,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -1500,7 +1952,7 @@
                       "by": -1,
                       "index": 2,
                       "layer": 2,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Up",
@@ -1514,7 +1966,7 @@
                       "by": 1,
                       "index": 2,
                       "layer": 2,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Down",
@@ -1527,7 +1979,7 @@
                     "params": {
                       "index": 2,
                       "layer": 2,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -1550,7 +2002,7 @@
                       "by": -1,
                       "index": 3,
                       "layer": 2,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Up",
@@ -1563,7 +2015,7 @@
                     "params": {
                       "index": 3,
                       "layer": 2,
-                      "sub": true
+                      "related": "subtasks"
                     }
                   },
                   "text": "Remove",
@@ -1636,7 +2088,7 @@
                 "label": "Add",
                 "params": {
                   "layer": 2,
-                  "sub": true
+                  "related": "subtasks"
                 }
               },
               "type": "form"
@@ -1645,10 +2097,11 @@
               "children": [
                 {
                   "action": {
-                    "id": "draft.subtasksHide",
+                    "id": "draft.relatedHide",
                     "label": "Hide subtasks",
                     "params": {
-                      "layer": 2
+                      "layer": 2,
+                      "related": "subtasks"
                     }
                   },
                   "text": "Hide subtasks",
@@ -1661,6 +2114,231 @@
           "key": "edit-layer-2-subtasks",
           "open": false,
           "title": "Subtasks",
+          "type": "section"
+        },
+        {
+          "children": [
+            {
+              "muted": true,
+              "text": "The fields Jira shows, after each linked work item's key and summary. Change them to choose your own.",
+              "type": "text"
+            },
+            {
+              "children": [
+                {
+                  "text": "Status",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move down",
+                    "params": {
+                      "by": 1,
+                      "index": 0,
+                      "layer": 2,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Down",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.remove",
+                    "label": "Remove",
+                    "params": {
+                      "index": 0,
+                      "layer": 2,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Remove",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            },
+            {
+              "children": [
+                {
+                  "text": "Assignee",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move up",
+                    "params": {
+                      "by": -1,
+                      "index": 1,
+                      "layer": 2,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Up",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move down",
+                    "params": {
+                      "by": 1,
+                      "index": 1,
+                      "layer": 2,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Down",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.remove",
+                    "label": "Remove",
+                    "params": {
+                      "index": 1,
+                      "layer": 2,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Remove",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            },
+            {
+              "children": [
+                {
+                  "text": "Priority",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "draft.move",
+                    "label": "Move up",
+                    "params": {
+                      "by": -1,
+                      "index": 2,
+                      "layer": 2,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Up",
+                  "type": "link"
+                },
+                {
+                  "action": {
+                    "id": "draft.remove",
+                    "label": "Remove",
+                    "params": {
+                      "index": 2,
+                      "layer": 2,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Remove",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            },
+            {
+              "fields": [
+                {
+                  "kind": "select",
+                  "label": "Add a field",
+                  "name": "field",
+                  "options": [
+                    {
+                      "label": "Summary",
+                      "value": "summary"
+                    },
+                    {
+                      "label": "Issue Type",
+                      "value": "issuetype"
+                    },
+                    {
+                      "label": "Reporter",
+                      "value": "reporter"
+                    },
+                    {
+                      "label": "Description",
+                      "value": "description"
+                    },
+                    {
+                      "label": "Comment",
+                      "value": "comment"
+                    },
+                    {
+                      "label": "Labels",
+                      "value": "labels"
+                    },
+                    {
+                      "label": "Due date",
+                      "value": "duedate"
+                    },
+                    {
+                      "label": "Created",
+                      "value": "created"
+                    },
+                    {
+                      "label": "Updated",
+                      "value": "updated"
+                    },
+                    {
+                      "label": "Parent",
+                      "value": "parent"
+                    },
+                    {
+                      "label": "Story points",
+                      "value": "storyPoints"
+                    },
+                    {
+                      "label": "Sprint",
+                      "value": "sprint"
+                    },
+                    {
+                      "label": "Acceptance criteria",
+                      "value": "customfield_10050"
+                    }
+                  ],
+                  "value": null
+                }
+              ],
+              "submit": {
+                "id": "draft.add",
+                "label": "Add",
+                "params": {
+                  "layer": 2,
+                  "related": "links"
+                }
+              },
+              "type": "form"
+            },
+            {
+              "children": [
+                {
+                  "action": {
+                    "id": "draft.relatedHide",
+                    "label": "Hide linked work items",
+                    "params": {
+                      "layer": 2,
+                      "related": "links"
+                    }
+                  },
+                  "text": "Hide linked work items",
+                  "type": "link"
+                }
+              ],
+              "type": "row"
+            }
+          ],
+          "key": "edit-layer-2-links",
+          "open": false,
+          "title": "Linked work items",
           "type": "section"
         },
         {

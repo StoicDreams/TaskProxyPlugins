@@ -97,6 +97,12 @@ pub fn host() -> FakeHost {
         row("ATL-133", "Fix timezone in deploy summaries", status("Done", "done"), "Medium", 3, "ATL-120",
             json!([comment("Morgan Diaz", "2026-11-09T17:45:00.000+0000", "Verified on staging with a UTC+10 account.")])),
     ] }));
+    // ATL-142's linked work items, asked for by key when it is opened, before the parents' answer below can match.
+    host.answer_when("POST", "/rest/api/3/search/jql", "\\\"ATL-151\\\", \\\"ATL-156\\\"", 200, json!({ "isLast": true, "issues": [
+        issue("ATL-151", "Story", "Retry failed webhook deliveries", json!({ "status": status("To Do", "new"), "priority": { "name": "High" }, "assignee": user("Sam Lee") })),
+        issue("ATL-156", "Task", "Add keyboard shortcut for search", json!({ "status": status("To Do", "new"), "priority": { "name": "Low" }, "assignee": user("Morgan Diaz") })),
+        issue("ATL-139", "Story", "Cache release notes between sessions so the changelog opens instantly", json!({ "status": status("In Review", "indeterminate"), "priority": { "name": "Medium" }, "assignee": user("Priya Shah") })),
+    ] }));
     // Each issue's parent, asked for by key after the search.
     host.answer_when("POST", "/rest/api/3/search/jql", "key in", 200, json!({ "isLast": true, "issues": [
         issue("ATL-120", "Story", "Release visibility for teams", json!({ "status": status("In Progress", "indeterminate"), "parent": { "key": "ATL-100" } })),
@@ -206,6 +212,12 @@ pub fn host() -> FakeHost {
     atl_142["renderedFields"] = json!({ "description": "<p>Show the latest CI result.</p><img src=\"/rest/api/3/attachment/content/10400\" alt=\"dashboard.png\">" });
     atl_142["fields"]["subtasks"] =
         json!([{ "key": "ATL-143" }, { "key": "ATL-144" }, { "key": "ATL-145" }]);
+    let blocks = json!({ "name": "Blocks", "inward": "is blocked by", "outward": "blocks" });
+    atl_142["fields"]["issuelinks"] = json!([
+        { "type": blocks, "inwardIssue": { "key": "ATL-151", "fields": { "summary": "Retry failed webhook deliveries" } } },
+        { "type": blocks, "inwardIssue": { "key": "ATL-156", "fields": { "summary": "Add keyboard shortcut for search" } } },
+        { "type": { "name": "Relates", "inward": "relates to", "outward": "relates to" }, "outwardIssue": { "key": "ATL-139", "fields": { "summary": "Cache release notes between sessions" } } }
+    ]);
     host.answer("GET", "/rest/api/3/issue/ATL-142", 200, atl_142);
     host.answer_when("POST", "/rest/api/3/search/jql", "parent = \\\"ATL-142\\\"", 200, json!({ "isLast": true, "issues": [
         issue("ATL-143", "Subtask", "Build requirements", json!({ "status": status("Done", "done"), "priority": { "name": "High" }, "assignee": user("Priya Shah"), "customfield_10016": 1 })),
