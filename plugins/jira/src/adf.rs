@@ -9,6 +9,124 @@ pub fn to_markdown(doc: &Value) -> String {
     out.trim().to_string()
 }
 
+/// The name an image in a document is shown by, as `![alt](media-0)`.
+pub fn media_name(index: usize) -> String {
+    format!("media-{}", index)
+}
+
+/// Numbers each `media` node in document order, as `media_name` names them.
+fn number_media(node: &mut Value, next: &mut usize) {
+    if node.get("type").and_then(Value::as_str) == Some("media")
+        && let Some(object) = node.as_object_mut()
+    {
+        let attrs = object.entry("attrs").or_insert_with(|| json!({}));
+        if let Some(attrs) = attrs.as_object_mut() {
+            attrs.insert(MEDIA_INDEX.into(), json!(*next));
+        }
+        *next += 1;
+    }
+    if let Some(content) = node.get_mut("content").and_then(Value::as_array_mut) {
+        for child in content {
+            number_media(child, next);
+        }
+    }
+}
+
+const MEDIA_INDEX: &str = "__taskProxyMedia";
+
+/// A document as markdown, with each image as `![name](media-N)`, so the images can be shown, and kept when the
+/// markdown is saved with `from_markdown_keeping_media`. Returns the markdown and each image's name in its document,
+/// in order: its alt text, or its file name.
+pub fn to_markdown_with_media(doc: &Value) -> (String, Vec<String>) {
+    let mut numbered = doc.clone();
+    number_media(&mut numbered, &mut 0);
+    let names = media_nodes(doc)
+        .iter()
+        .map(|media| {
+            let alt = attr_str(media, "alt");
+            if alt.is_empty() {
+                "image".to_string()
+            } else {
+                alt.to_string()
+            }
+        })
+        .collect();
+    (to_markdown(&numbered), names)
+}
+
+/// Every `media` node in a document, in order.
+pub fn media_nodes(doc: &Value) -> Vec<&Value> {
+    fn walk<'a>(node: &'a Value, out: &mut Vec<&'a Value>) {
+        if node.get("type").and_then(Value::as_str) == Some("media") {
+            out.push(node);
+        }
+        for child in children(node) {
+            walk(child, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(doc, &mut out);
+    out
+}
+
+/// The block holding each image, such as a `mediaSingle`, by image number.
+fn media_blocks(doc: &Value) -> Vec<Value> {
+    let mut out = Vec::new();
+    for block in children(doc) {
+        let count = media_nodes(block).len();
+        for _ in 0..count {
+            out.push(block.clone());
+        }
+    }
+    out
+}
+
+/// Markdown as a document, with each `![name](media-N)` on a line of its own put back as the image it was in
+/// `original`, so editing a description keeps its images.
+pub fn from_markdown_keeping_media(markdown: &str, original: &Value) -> Value {
+    let mut doc = from_markdown(markdown);
+    let kept = media_blocks(original);
+    if kept.is_empty() {
+        return doc;
+    }
+    let mut used = vec![false; kept.len()];
+    if let Some(content) = doc.get_mut("content").and_then(Value::as_array_mut) {
+        for block in content.iter_mut() {
+            if block.get("type").and_then(Value::as_str) != Some("paragraph") {
+                continue;
+            }
+            let text: String = children(block)
+                .iter()
+                .filter_map(|node| node.get("text").and_then(Value::as_str))
+                .collect();
+            if let Some(index) = image_reference(text.trim())
+                && index < kept.len()
+                && !used[index]
+            {
+                // A block with several images is put back once, for its first one.
+                let first = kept
+                    .iter()
+                    .position(|other| other == &kept[index])
+                    .unwrap_or(index);
+                for (other, flag) in used.iter_mut().enumerate() {
+                    if kept[other] == kept[first] {
+                        *flag = true;
+                    }
+                }
+                *block = kept[first].clone();
+            }
+        }
+    }
+    doc
+}
+
+/// `N` from `![anything](media-N)`.
+fn image_reference(text: &str) -> Option<usize> {
+    let inner = text.strip_prefix("![")?.strip_suffix(')')?;
+    let (_, target) = inner.split_once("](")?;
+    target.strip_prefix("media-")?.parse().ok()
+}
+
 fn children(node: &Value) -> &[Value] {
     node.get("content")
         .and_then(Value::as_array)
@@ -78,7 +196,26 @@ fn block(node: &Value, out: &mut String) {
             }
             blocks(node.get("content"), out, "");
         }
-        "mediaSingle" | "mediaGroup" | "media" => out.push_str("*(attachment)*"),
+        "mediaSingle" | "mediaGroup" | "media" => {
+            let media = media_nodes(node);
+            let numbered: Vec<String> = media
+                .iter()
+                .filter_map(|media| {
+                    let index = attr(media, MEDIA_INDEX)?.as_u64()?;
+                    let alt = attr_str(media, "alt");
+                    Some(format!(
+                        "![{}]({})",
+                        if alt.is_empty() { "image" } else { alt },
+                        media_name(index as usize)
+                    ))
+                })
+                .collect();
+            if numbered.is_empty() {
+                out.push_str("*(attachment)*");
+            } else {
+                out.push_str(&numbered.join("\n\n"));
+            }
+        }
         "blockCard" | "embedCard" => {
             let url = attr_str(node, "url");
             out.push_str(&format!("<{}>", url));
@@ -462,6 +599,31 @@ fn inline_nodes(text: &str) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn images_are_named_in_markdown_and_kept_when_it_is_saved() {
+        let image = json!({ "type": "mediaSingle", "attrs": { "layout": "center" }, "content": [
+            { "type": "media", "attrs": { "id": "uuid-1", "type": "file", "collection": "c", "alt": "login.png" } }
+        ] });
+        let doc = json!({ "type": "doc", "version": 1, "content": [
+            { "type": "paragraph", "content": [{ "type": "text", "text": "Before" }] },
+            image.clone(),
+            { "type": "paragraph", "content": [{ "type": "text", "text": "After" }] }
+        ] });
+        let (markdown, names) = to_markdown_with_media(&doc);
+        assert_eq!(markdown, "Before\n\n![login.png](media-0)\n\nAfter");
+        assert_eq!(names, vec!["login.png"]);
+        // Without names, images stay a note, as in comments.
+        assert!(to_markdown(&doc).contains("*(attachment)*"));
+        let edited = from_markdown_keeping_media("Changed\n\n![login.png](media-0)\n\nAfter", &doc);
+        let content = edited["content"].as_array().unwrap();
+        assert_eq!(content[1], image, "the image comes back as it was");
+        assert_eq!(content[0]["content"][0]["text"], "Changed");
+        // A removed image stays removed, and a reference to no image stays text.
+        let removed = from_markdown_keeping_media("Only text\n\n![x](media-9)", &doc);
+        assert!(!removed.to_string().contains("uuid-1"));
+        assert!(removed.to_string().contains("media-9"));
+    }
 
     fn doc(content: Value) -> Value {
         json!({ "type": "doc", "version": 1, "content": content })

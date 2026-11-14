@@ -59,6 +59,9 @@ fn issue(key: &str, kind: &str, summary: &str, extra: Value) -> Value {
     json!({ "key": key, "fields": fields })
 }
 
+/// A screenshot of the made-up dashboard, attached to ATL-142.
+const DASHBOARD_PNG: &[u8] = include_bytes!("demo-dashboard.png");
+
 /// A host answering like a Jira site for a made-up Atlas project.
 pub fn host() -> FakeHost {
     let host = FakeHost::connected();
@@ -143,8 +146,8 @@ pub fn host() -> FakeHost {
         comment("Priya Shah", "2026-11-10T09:12:00.000+0000", "Design is in the Release Visibility doc. The icon should match the repo list."),
         comment("Sam Lee", "2026-11-11T15:30:00.000+0000", "Icons are in. Working on refreshing when a run finishes.")
     ] }));
-    // The demo's Task Proxy draws spec 0.1.2, so the columns editor drags.
-    *host.spec.borrow_mut() = Some("0.1.2".into());
+    // The demo's Task Proxy draws spec 0.1.3, so the columns editor drags and descriptions show their images.
+    *host.spec.borrow_mut() = Some("0.1.3".into());
     host.store.borrow_mut().insert(
         "columns.issues".into(),
         json!([
@@ -171,23 +174,43 @@ pub fn host() -> FakeHost {
             { "layer": 1, "field": "summary" }
         ]),
     );
-    host.answer("GET", "/rest/api/3/issue/ATL-142", 200, issue("ATL-142", "Task", "Show CI status on the dashboard", json!({
-        "status": status("In Progress", "indeterminate"), "priority": { "name": "High" },
-        "assignee": user("Sam Lee"), "reporter": user("Priya Shah"), "customfield_10016": 5,
-        "customfield_10020": sprint,
-        "description": doc(&[
-            "Show the latest CI result next to each repo on the dashboard, so a failed build is seen right away.",
-            "- Use the same icons as the Git Controller",
-            "- Refresh when a run finishes",
-        ]),
-        "comment": { "comments": [
-            { "author": user("Priya Shah"), "created": "2026-11-10T09:12:00.000+0000",
-              "body": doc(&["Design is in the Release Visibility doc. The icon should match the repo list."]) },
-            { "author": user("Sam Lee"), "created": "2026-11-11T15:30:00.000+0000",
-              "body": doc(&["Icons are in. Working on refreshing when a run finishes."]) }
-        ] },
-        "parent": { "key": "ATL-120" }
-    })));
+    let mut atl_142 = issue(
+        "ATL-142",
+        "Task",
+        "Show CI status on the dashboard",
+        json!({
+            "status": status("In Progress", "indeterminate"), "priority": { "name": "High" },
+            "assignee": user("Sam Lee"), "reporter": user("Priya Shah"), "customfield_10016": 5,
+            "customfield_10020": sprint,
+            "description": doc(&[
+                "Show the latest CI result next to each repo on the dashboard, so a failed build is seen right away.",
+                "- Use the same icons as the Git Controller",
+                "- Refresh when a run finishes",
+            ]),
+            "comment": { "comments": [
+                { "author": user("Priya Shah"), "created": "2026-11-10T09:12:00.000+0000",
+                  "body": doc(&["Design is in the Release Visibility doc. The icon should match the repo list."]) },
+                { "author": user("Sam Lee"), "created": "2026-11-11T15:30:00.000+0000",
+                  "body": doc(&["Icons are in. Working on refreshing when a run finishes."]) }
+            ] },
+            "parent": { "key": "ATL-120" },
+            "attachment": [{ "id": "10400", "filename": "dashboard.png", "mimeType": "image/png", "size": DASHBOARD_PNG.len() }]
+        }),
+    );
+    // The description shows a screenshot of the dashboard, attached to the issue.
+    if let Some(content) = atl_142["fields"]["description"]["content"].as_array_mut() {
+        content.insert(1, json!({ "type": "mediaSingle", "attrs": { "layout": "center" }, "content": [
+            { "type": "media", "attrs": { "id": "demo-media-1", "type": "file", "collection": "demo", "alt": "dashboard.png" } }
+        ] }));
+    }
+    atl_142["renderedFields"] = json!({ "description": "<p>Show the latest CI result.</p><img src=\"/rest/api/3/attachment/content/10400\" alt=\"dashboard.png\">" });
+    host.answer("GET", "/rest/api/3/issue/ATL-142", 200, atl_142);
+    host.answer(
+        "GET",
+        "/rest/api/3/attachment/content/10400?redirect=false",
+        200,
+        json!(crate::client::base64(DASHBOARD_PNG)),
+    );
     host.answer("GET", "/rest/api/3/issue/ATL-120", 200, issue("ATL-120", "Story", "Release visibility for teams", json!({
         "status": status("In Progress", "indeterminate"), "priority": { "name": "High" },
         "assignee": user("Priya Shah"), "reporter": user("Morgan Diaz"), "customfield_10016": 13,
@@ -337,6 +360,25 @@ pub fn screens() -> Result<Vec<(&'static str, Value)>> {
         },
     )?;
     screens.push(("branch-card", serde_json::to_value(card)?));
+    let description = ask(
+        "issues",
+        "cell.open",
+        &[("key", "ATL-142"), ("field", "description")],
+    )?;
+    screens.push(("description", serde_json::to_value(description)?));
+    screens.push((
+        "branches",
+        render(
+            "branches",
+            &[
+                (
+                    "format",
+                    "{type|map:Bug=bugfix,*=feature}/{key}-{summary|slug|max:30}",
+                ),
+                ("key", "ATL-142"),
+            ],
+        )?,
+    ));
     Ok(screens)
 }
 
@@ -347,7 +389,7 @@ mod tests {
     #[test]
     fn every_demo_screen_renders() {
         let screens = screens().unwrap();
-        assert_eq!(screens.len(), 11);
+        assert_eq!(screens.len(), 13);
         let issue = serde_json::to_string(&screens[2].1).unwrap();
         for expected in [
             "Parent · Story ATL-120",

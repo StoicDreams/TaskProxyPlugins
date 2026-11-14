@@ -6,6 +6,7 @@
 //! real field ids differ between Jira sites.
 use crate::client::{Jira, encode};
 use crate::fields::{self, Fields};
+use crate::{images, list};
 use serde::{Deserialize, Serialize};
 use taskproxy_plugin_sdk::ui::{self, Action, Choice, Field, FieldKind, Node};
 use taskproxy_plugin_sdk::{ActionRequest, ActionResult, Error, Host, Map, Result, Value, json};
@@ -76,6 +77,27 @@ pub fn default_view() -> View {
                 .to_vec(),
         ],
     }
+}
+
+/// One of an issue's fields in a View. A field picked from a list changes when its value is clicked, and a text
+/// field switches to its editor when its label is clicked.
+fn property(jira: &Jira, fields: &Fields, issue: &Value, real: &str, label: &str) -> ui::Property {
+    let value = fields.value_of(issue, real);
+    let key = issue.get("key").and_then(Value::as_str).unwrap_or("");
+    if list::is_choice(real, fields) {
+        return ui::property(label, list::cell(fields, real, label, Some(issue)));
+    }
+    if list::is_editable_text(real, fields) {
+        let shown = if list::is_rich_text(real, fields) {
+            images::rich_text(jira, key, real, &value)
+        } else {
+            fields::value_node(real, &value)
+        };
+        let mut property = ui::property(label, shown);
+        property.edit = Some(list::text_editor(fields, key, real, &value));
+        return property;
+    }
+    ui::property(label, fields::value_node(real, &value))
 }
 
 pub fn layer_name(depth: usize) -> String {
@@ -222,9 +244,12 @@ pub fn layers(jira: &Jira, fields: &Fields, view: &View, key: &str) -> Result<(V
             .iter()
             .filter_map(|id| {
                 let real = resolve(id, fields)?;
-                Some(ui::property(
-                    field_label(id, fields),
-                    fields::value_node(&real, &fields.value_of(&issue, &real)),
+                Some(property(
+                    jira,
+                    fields,
+                    &issue,
+                    &real,
+                    &field_label(id, fields),
                 ))
             })
             .collect();
@@ -743,15 +768,16 @@ mod tests {
         };
         assert_eq!(title, "Issue · Task P-3");
         assert_eq!(subtitle.as_deref(), Some("Fix login"));
-        assert_eq!(
-            children[0],
-            Node::Properties {
-                items: vec![
-                    ui::property("Status", ui::badge("To Do", "")),
-                    ui::property("Story points", ui::text("3")),
-                ]
-            }
+        // Fields picked from a list change in place when their value is clicked.
+        let Node::Properties { items } = &children[0] else {
+            panic!()
+        };
+        assert_eq!(items[0].label, "Status");
+        assert!(matches!(&items[0].value, Node::Select { text, .. } if text == "To Do"));
+        assert!(
+            matches!(&items[1].value, Node::Select { text, options, .. } if text == "3" && options.id == "cell.options")
         );
+        assert!(items.iter().all(|item| item.edit.is_none()));
         let Node::Section {
             title, children, ..
         } = &sections[1]
@@ -759,12 +785,17 @@ mod tests {
             panic!()
         };
         assert_eq!(title, "Parent · Story P-2");
-        assert_eq!(
-            children[0],
-            Node::Properties {
-                items: vec![ui::property("Description", ui::markdown("As a user"))]
-            }
-        );
+        // A text field shows its value, and clicking its label switches to an editor that saves it.
+        let Node::Properties { items } = &children[0] else {
+            panic!()
+        };
+        assert_eq!(items[0].value, ui::markdown("As a user"));
+        let Some(Node::Form { fields, submit, .. }) = &items[0].edit else {
+            panic!("the description has an editor")
+        };
+        assert_eq!(fields[0].value, json!("As a user"));
+        assert_eq!(submit.id, "cell.save");
+        assert_eq!(submit.params["key"], "P-2");
     }
 
     #[test]

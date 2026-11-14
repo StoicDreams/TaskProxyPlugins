@@ -35,19 +35,6 @@
         },
         {
           "action": {
-            "confirm": "Create the branch ATL-142-show-ci-status-on-the-dashboard from the current branch and switch to it?",
-            "host": {
-              "name": "ATL-142-show-ci-status-on-the-dashboard",
-              "type": "git.createBranch"
-            },
-            "icon": "code-branch",
-            "id": "",
-            "label": "Create branch"
-          },
-          "type": "button"
-        },
-        {
-          "action": {
             "icon": "refresh",
             "id": "issue.refresh",
             "label": "Refresh"
@@ -56,6 +43,40 @@
         }
       ],
       "type": "toolbar"
+    },
+    {
+      "buttons": [
+        {
+          "action": {
+            "icon": "gear",
+            "id": "branches.open",
+            "label": "Branch format"
+          },
+          "theme": "secondary",
+          "type": "button"
+        }
+      ],
+      "fields": [
+        {
+          "kind": "text",
+          "label": "Branch name",
+          "name": "name",
+          "required": true,
+          "value": "ATL-142-show-ci-status-on-the-dashboard"
+        }
+      ],
+      "inline": true,
+      "submit": {
+        "confirm": "Create this branch from the current branch and switch to it?",
+        "host": {
+          "name": "ATL-142-show-ci-status-on-the-dashboard",
+          "type": "git.createBranch"
+        },
+        "icon": "code-branch",
+        "id": "",
+        "label": "Create branch"
+      },
+      "type": "form"
     },
     {
       "fields": [
@@ -124,16 +145,48 @@
             {
               "label": "Status",
               "value": {
+                "action": {
+                  "id": "cell.set",
+                  "label": "Change Status",
+                  "params": {
+                    "field": "status",
+                    "key": "ATL-142"
+                  }
+                },
+                "options": {
+                  "id": "cell.options",
+                  "label": "Change Status",
+                  "params": {
+                    "field": "status",
+                    "key": "ATL-142"
+                  }
+                },
                 "text": "In Progress",
                 "theme": "info",
-                "type": "badge"
+                "type": "select"
               }
             },
             {
               "label": "Assignee",
               "value": {
+                "action": {
+                  "id": "cell.set",
+                  "label": "Change Assignee",
+                  "params": {
+                    "field": "assignee",
+                    "key": "ATL-142"
+                  }
+                },
+                "options": {
+                  "id": "cell.options",
+                  "label": "Change Assignee",
+                  "params": {
+                    "field": "assignee",
+                    "key": "ATL-142"
+                  }
+                },
                 "text": "Sam Lee",
-                "type": "text"
+                "type": "select"
               }
             },
             {
@@ -146,28 +199,100 @@
             {
               "label": "Priority",
               "value": {
+                "action": {
+                  "id": "cell.set",
+                  "label": "Change Priority",
+                  "params": {
+                    "field": "priority",
+                    "key": "ATL-142"
+                  }
+                },
+                "options": {
+                  "id": "cell.options",
+                  "label": "Change Priority",
+                  "params": {
+                    "field": "priority",
+                    "key": "ATL-142"
+                  }
+                },
                 "text": "High",
-                "type": "text"
+                "type": "select"
               }
             },
             {
               "label": "Story points",
               "value": {
+                "action": {
+                  "id": "cell.set",
+                  "label": "Change Story points",
+                  "params": {
+                    "field": "customfield_10016",
+                    "key": "ATL-142"
+                  }
+                },
+                "options": {
+                  "id": "cell.options",
+                  "label": "Change Story points",
+                  "params": {
+                    "field": "customfield_10016",
+                    "key": "ATL-142"
+                  }
+                },
                 "text": "5",
-                "type": "text"
+                "type": "select"
               }
             },
             {
               "label": "Sprint",
               "value": {
+                "action": {
+                  "id": "cell.set",
+                  "label": "Change Sprint",
+                  "params": {
+                    "field": "customfield_10020",
+                    "key": "ATL-142"
+                  }
+                },
+                "options": {
+                  "id": "cell.options",
+                  "label": "Change Sprint",
+                  "params": {
+                    "field": "customfield_10020",
+                    "key": "ATL-142"
+                  }
+                },
                 "text": "Atlas Sprint 14",
-                "type": "text"
+                "type": "select"
               }
             },
             {
+              "edit": {
+                "fields": [
+                  {
+                    "kind": "textarea",
+                    "label": "Description",
+                    "name": "value",
+                    "placeholder": "Markdown: **bold**, *italic*, `code`, lists, and links. Keep a ![name](media-0) line to keep its image.",
+                    "value": "Show the latest CI result next to each repo on the dashboard, so a failed build is seen right away.\n\n![dashboard.png](media-0)\n\n- Use the same icons as the Git Controller\n\n- Refresh when a run finishes"
+                  }
+                ],
+                "submit": {
+                  "id": "cell.save",
+                  "label": "Save",
+                  "params": {
+                    "field": "description",
+                    "key": "ATL-142"
+                  }
+                },
+                "type": "form"
+              },
               "label": "Description",
               "value": {
-                "text": "Show the latest CI result next to each repo on the dashboard, so a failed build is seen right away.\n\n- Use the same icons as the Git Controller\n\n- Refresh when a run finishes",
+                "images": {
+                  "media-0": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWgAAACMCAIAAADeJaSiAAACJklEQVR42u3dsQ0CIRSA4evd4gpLKivbS5zJcW4cG7VzHgeg4EHuLgpf8k0A4Q/FI0yn+wugymQJAOEAhAMQDkA4AOEAEA5AOADhAIQDEA4A4QCEAxAOQDgA4QAQDkA4AOEAhAMQDkA4AIQDEA5AOIC/D8d8TgBVhAMQDkA4AOEAhAMQDgDhAIQDEA5AOADhABAOQDiA3w7H5XoDBiEcgHAAwgEIByAcwgHCcXw40rrYAxCOaC9yNgOEo64a2gHC0VKNeDsezw8HcDwQDoQD4UA4GCQcxWoE2+FICwduHG4cwoFwCIdwIBzCIRxgjgMwOQp4qwIIByAcwgEIByAcgHAAfYcDQDgA4QCEAxAOQDgA4bAEgHAAwgEIBzBKOAzhgpFz4QCEAxAOQDgA4QCEY79wvGfFAeEI9yJnM0A46qqhHSAcLdWIt8Ovrn6lRTiEQzgQDuFAOIRjw3AUqxFsh4MnHLhxuHEIB8IhHAiHcAgHwoE5DsDkKOCtCiAcgHAIByAcgHAAwgH0HQ4A4QCEAxAOQDgA4QCEwxIAwgEIByAcwCjhMIQLRs6FAxAOQDgA4QCEAxCO/cKR1sUegHBEe5GzGSAcddXQDhCOlmrE2+HvVfxKKxzCgXAIh3AgHMKxYTiK1Qi2w/FAONw43DgQDuEQDoRDOIQD4cAcB2ByFPBWBRAOQDiEAxAOQDgA4QD6DgeAcADCAQgHIByAcADCYQkA4QB29wXgVo5ClUUmhAAAAABJRU5ErkJggg=="
+                },
+                "text": "Show the latest CI result next to each repo on the dashboard, so a failed build is seen right away.\n\n![dashboard.png](media-0)\n\n- Use the same icons as the Git Controller\n\n- Refresh when a run finishes",
+                "toggle": true,
                 "type": "markdown"
               }
             },
@@ -244,33 +369,122 @@
             {
               "label": "Status",
               "value": {
+                "action": {
+                  "id": "cell.set",
+                  "label": "Change Status",
+                  "params": {
+                    "field": "status",
+                    "key": "ATL-120"
+                  }
+                },
+                "options": {
+                  "id": "cell.options",
+                  "label": "Change Status",
+                  "params": {
+                    "field": "status",
+                    "key": "ATL-120"
+                  }
+                },
                 "text": "In Progress",
                 "theme": "info",
-                "type": "badge"
+                "type": "select"
               }
             },
             {
               "label": "Assignee",
               "value": {
+                "action": {
+                  "id": "cell.set",
+                  "label": "Change Assignee",
+                  "params": {
+                    "field": "assignee",
+                    "key": "ATL-120"
+                  }
+                },
+                "options": {
+                  "id": "cell.options",
+                  "label": "Change Assignee",
+                  "params": {
+                    "field": "assignee",
+                    "key": "ATL-120"
+                  }
+                },
                 "text": "Priya Shah",
-                "type": "text"
+                "type": "select"
               }
             },
             {
               "label": "Story points",
               "value": {
+                "action": {
+                  "id": "cell.set",
+                  "label": "Change Story points",
+                  "params": {
+                    "field": "customfield_10016",
+                    "key": "ATL-120"
+                  }
+                },
+                "options": {
+                  "id": "cell.options",
+                  "label": "Change Story points",
+                  "params": {
+                    "field": "customfield_10016",
+                    "key": "ATL-120"
+                  }
+                },
                 "text": "13",
-                "type": "text"
+                "type": "select"
               }
             },
             {
+              "edit": {
+                "fields": [
+                  {
+                    "kind": "textarea",
+                    "label": "Description",
+                    "name": "value",
+                    "placeholder": "Markdown: **bold**, *italic*, `code`, lists, and links. Keep a ![name](media-0) line to keep its image.",
+                    "value": "As a team lead, I want to see what is building and shipping without opening another tool."
+                  }
+                ],
+                "submit": {
+                  "id": "cell.save",
+                  "label": "Save",
+                  "params": {
+                    "field": "description",
+                    "key": "ATL-120"
+                  }
+                },
+                "type": "form"
+              },
               "label": "Description",
               "value": {
                 "text": "As a team lead, I want to see what is building and shipping without opening another tool.",
+                "toggle": true,
                 "type": "markdown"
               }
             },
             {
+              "edit": {
+                "fields": [
+                  {
+                    "kind": "textarea",
+                    "label": "Acceptance criteria",
+                    "name": "value",
+                    "placeholder": "Markdown: **bold**, *italic*, `code`, lists, and links. Keep a ![name](media-0) line to keep its image.",
+                    "value": "- Every repo shows its latest CI result\n\n- Failed runs stand out at a glance"
+                  }
+                ],
+                "submit": {
+                  "id": "cell.save",
+                  "label": "Save",
+                  "params": {
+                    "field": "customfield_10050",
+                    "key": "ATL-120"
+                  }
+                },
+                "type": "form"
+              },
               "label": "Acceptance criteria",
               "value": {
                 "text": "- Every repo shows its latest CI result\n\n- Failed runs stand out at a glance",
@@ -335,9 +549,30 @@
         {
           "items": [
             {
+              "edit": {
+                "fields": [
+                  {
+                    "kind": "textarea",
+                    "label": "Description",
+                    "name": "value",
+                    "placeholder": "Markdown: **bold**, *italic*, `code`, lists, and links. Keep a ![name](media-0) line to keep its image.",
+                    "value": "Cut the time developers spend switching between tools by a third this quarter."
+                  }
+                ],
+                "submit": {
+                  "id": "cell.save",
+                  "label": "Save",
+                  "params": {
+                    "field": "description",
+                    "key": "ATL-100"
+                  }
+                },
+                "type": "form"
+              },
               "label": "Description",
               "value": {
                 "text": "Cut the time developers spend switching between tools by a third this quarter.",
+                "toggle": true,
                 "type": "markdown"
               }
             }

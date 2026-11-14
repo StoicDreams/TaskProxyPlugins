@@ -1,8 +1,10 @@
 //! Jira Cloud for Task Proxy: My Issues, each issue with its parents through Views, Create Issue, a branch for each
 //! issue, and the current branch's issue in the Git Controller.
 mod adf;
+mod branch;
 mod client;
 mod fields;
+mod images;
 mod list;
 mod notify;
 mod pages;
@@ -56,6 +58,7 @@ impl Plugin for JiraPlugin {
             "create" => pages::create(&jira, &request.params),
             "notifications" => notify::page(&jira),
             "views" => views::page(host, &Fields::load(&jira)?, &request.params),
+            branch::PAGE => branch::page(&jira, &request.params),
             other => Err(Error(format!("Jira has no page named {}.", other))),
         }
     }
@@ -71,6 +74,9 @@ impl Plugin for JiraPlugin {
             return Ok(result);
         }
         if let Some(result) = notify::action(&jira, &request)? {
+            return Ok(result);
+        }
+        if let Some(result) = branch::action(&jira, &request)? {
             return Ok(result);
         }
         if request.action.starts_with("views.") || request.action.starts_with("draft.") {
@@ -247,10 +253,11 @@ pub mod testing {
                 .ok_or_else(|| Error(format!("No answer set for {}", key)))?;
             Ok(HttpResponse {
                 status,
-                body: if body.is_null() {
-                    String::new()
-                } else {
-                    body.to_string()
+                // A file asked for as base64 comes back as the text it is, as from a real server.
+                body: match (&body, request.encoding.as_deref()) {
+                    (Value::Null, _) => String::new(),
+                    (Value::String(text), Some("base64")) => text.clone(),
+                    _ => body.to_string(),
                 },
             })
         }

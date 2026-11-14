@@ -1,5 +1,6 @@
 //! The Jira plugin's pages: one issue through a View, and Create Issue. My Issues and All Issues are in `list`.
 use crate::adf;
+use crate::branch;
 use crate::client::{Jira, encode};
 use crate::fields::{self, Fields};
 use crate::list;
@@ -34,29 +35,6 @@ fn params(pairs: &[(&str, &str)]) -> Map<String, Value> {
 
 pub fn open_issue(key: &str) -> Action {
     Action::new("open", format!("Open {}", key)).param("key", key)
-}
-
-/// A branch name for an issue: its key, then a short slug of its summary.
-pub fn branch_name(key: &str, summary: &str) -> String {
-    let mut slug = String::new();
-    for word in summary
-        .to_lowercase()
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|word| !word.is_empty())
-    {
-        if slug.len() + word.len() + 1 > 40 {
-            break;
-        }
-        if !slug.is_empty() {
-            slug.push('-');
-        }
-        slug.push_str(word);
-    }
-    if slug.is_empty() {
-        key.to_string()
-    } else {
-        format!("{}-{}", key, slug)
-    }
 }
 
 /// One issue, through the chosen View, with its status, comment box, and actions.
@@ -129,22 +107,9 @@ pub fn issue(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> 
                 .icon("arrow-corner-from-square"),
                 "",
             ),
-            ui::button(
-                Action::host(
-                    "Create branch",
-                    HostAction::GitCreateBranch {
-                        name: branch_name(&key, summary),
-                    },
-                )
-                .icon("code-branch")
-                .confirm(format!(
-                    "Create the branch {} from the current branch and switch to it?",
-                    branch_name(&key, summary)
-                )),
-                "",
-            ),
             ui::button(Action::new("issue.refresh", "Refresh").icon("refresh"), ""),
         ]),
+        branch_form(&branch::name_for(jira, &issue)),
         Node::Form {
             fields: vec![
                 Field::new(FieldKind::Select, "view", "View")
@@ -182,6 +147,33 @@ pub fn issue(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> 
         inline: false,
     });
     Ok(ui::stack(children))
+}
+
+/// Creates a branch for the issue, named in the sign-in's format, which the name box can change first. Task Proxy
+/// 0.1.122 and earlier do not take the name from the box, so they create the suggested one.
+fn branch_form(suggested: &str) -> Node {
+    Node::Form {
+        fields: vec![
+            Field::new(FieldKind::Text, "name", "Branch name")
+                .value(suggested)
+                .required(),
+        ],
+        submit: Action::host(
+            "Create branch",
+            HostAction::GitCreateBranch {
+                name: suggested.to_string(),
+            },
+        )
+        .icon("code-branch")
+        .confirm("Create this branch from the current branch and switch to it?"),
+        cancel: None,
+        buttons: vec![ui::button(
+            Action::new("branches.open", "Branch format").icon("gear"),
+            "secondary",
+        )],
+        children: Vec::new(),
+        inline: true,
+    }
 }
 
 pub fn me(jira: &Jira) -> Result<String> {
@@ -471,22 +463,6 @@ mod tests {
         ] {
             assert_eq!(issue_key(branch).as_deref(), key, "{}", branch);
         }
-    }
-
-    #[test]
-    fn branches_are_named_from_the_issue() {
-        assert_eq!(
-            branch_name("P-1", "Fix the login page's redirect"),
-            "P-1-fix-the-login-page-s-redirect"
-        );
-        assert_eq!(
-            branch_name(
-                "P-1",
-                "A very long summary that keeps going on and on past forty characters"
-            ),
-            "P-1-a-very-long-summary-that-keeps-going-on"
-        );
-        assert_eq!(branch_name("P-1", "!!!"), "P-1");
     }
 
     #[test]

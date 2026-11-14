@@ -6,6 +6,7 @@
 use crate::adf;
 use crate::client::{Jira, encode};
 use crate::fields::{self, Fields};
+use crate::images;
 use crate::pages::{open_issue, param};
 use crate::views::{SPRINT, STORY_POINTS, field_label, layer_name, portable, resolve};
 use serde::{Deserialize, Serialize};
@@ -409,7 +410,7 @@ fn one_line(text: &str) -> String {
 }
 
 /// Fields whose value is picked from a list, which change in place.
-fn is_choice(real: &str, fields: &Fields) -> bool {
+pub(crate) fn is_choice(real: &str, fields: &Fields) -> bool {
     matches!(real, "status" | "priority" | "assignee")
         || fields.sprint().as_deref() == Some(real)
         || fields.is_story_points(real)
@@ -419,7 +420,7 @@ fn is_choice(real: &str, fields: &Fields) -> bool {
 }
 
 /// Fields of text the user can edit in a dialog.
-fn is_editable_text(real: &str, fields: &Fields) -> bool {
+pub(crate) fn is_editable_text(real: &str, fields: &Fields) -> bool {
     matches!(real, "summary" | "description" | "environment")
         || (real.starts_with("customfield_")
             && fields
@@ -428,7 +429,7 @@ fn is_editable_text(real: &str, fields: &Fields) -> bool {
 }
 
 /// Rich text fields hold Jira documents rather than plain strings.
-fn is_rich_text(real: &str, fields: &Fields) -> bool {
+pub(crate) fn is_rich_text(real: &str, fields: &Fields) -> bool {
     matches!(real, "description" | "environment")
         || fields
             .find(real)
@@ -454,7 +455,7 @@ fn latest_comment(value: &Value) -> Option<String> {
     Some(format!("{}: {}", author, body))
 }
 
-fn cell(fields: &Fields, real: &str, label: &str, issue: Option<&Value>) -> Node {
+pub(crate) fn cell(fields: &Fields, real: &str, label: &str, issue: Option<&Value>) -> Node {
     let Some(issue) = issue else {
         return ui::muted("");
     };
@@ -1277,35 +1278,60 @@ fn story_points_target(jira: &Jira, fields: &Fields, key: &str, real: &str) -> S
         .unwrap_or_else(|| real.to_string())
 }
 
-fn text_dialog(jira: &Jira, fields: &Fields, key: &str, real: &str) -> Result<Node> {
-    let issue = jira.get(&format!("issue/{}?fields={}", encode(key), encode(real)))?;
-    let value = issue
-        .pointer(&format!("/fields/{}", real))
-        .unwrap_or(&Value::Null);
-    if !is_editable_text(real, fields) {
-        return Ok(fields::value_node(real, value));
-    }
+/// The panel a text field's editor is in, shown by its Edit button.
+const EDIT_PANEL: &str = "cell-edit";
+
+/// The editor for a text field: a text box for a summary, or markdown for anything else, saved with `cell.save`.
+pub fn text_editor(fields: &Fields, key: &str, real: &str, value: &Value) -> Node {
     let text = if value.get("type").and_then(Value::as_str) == Some("doc") {
-        adf::to_markdown(value)
+        adf::to_markdown_with_media(value).0
     } else {
         value.as_str().unwrap_or("").to_string()
     };
     let field = if real == "summary" {
         Field::new(FieldKind::Text, "value", "Summary").required()
     } else {
-        Field::new(FieldKind::Textarea, "value", fields.name(real))
-            .placeholder("Markdown: **bold**, *italic*, `code`, lists, and links")
+        Field::new(FieldKind::Textarea, "value", fields.name(real)).placeholder(
+            "Markdown: **bold**, *italic*, `code`, lists, and links. Keep a ![name](media-0) line to keep its image.",
+        )
     };
-    Ok(Node::Form {
+    Node::Form {
         fields: vec![field.value(text)],
         submit: Action::new("cell.save", "Save")
             .param("key", key)
             .param("field", real),
-        cancel: Some(Action::new("cell.close", "Cancel")),
+        cancel: None,
         buttons: Vec::new(),
         children: Vec::new(),
-        inline: false,
-    })
+        inline: real == "summary",
+    }
+}
+
+fn text_dialog(jira: &Jira, fields: &Fields, key: &str, real: &str) -> Result<Node> {
+    let issue = jira.get(&format!("issue/{}?fields={}", encode(key), encode(real)))?;
+    let value = issue
+        .pointer(&format!("/fields/{}", real))
+        .cloned()
+        .unwrap_or(Value::Null);
+    if !is_editable_text(real, fields) {
+        return Ok(fields::value_node(real, &value));
+    }
+    if !is_rich_text(real, fields) {
+        return Ok(text_editor(fields, key, real, &value));
+    }
+    // Rich text shows rendered, with its images and a switch to the markdown as written, and Edit opens its editor.
+    Ok(ui::stack(vec![
+        images::rich_text(jira, key, real, &value),
+        ui::toolbar(vec![
+            ui::toggle("Edit", EDIT_PANEL),
+            ui::button(Action::new("cell.close", "Close"), "secondary"),
+        ]),
+        ui::panel(
+            EDIT_PANEL,
+            false,
+            vec![text_editor(fields, key, real, &value)],
+        ),
+    ]))
 }
 
 /// Answers the actions of My Issues and All Issues, or `None` when the action is not one of them.
@@ -1492,7 +1518,13 @@ pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResul
                 if text.trim().is_empty() {
                     Value::Null
                 } else {
-                    adf::from_markdown(text)
+                    // The images the field had come back where the markdown still names them.
+                    let original = jira
+                        .get(&format!("issue/{}?fields={}", encode(key), encode(real)))
+                        .ok()
+                        .and_then(|issue| issue.pointer(&format!("/fields/{}", real)).cloned())
+                        .unwrap_or(Value::Null);
+                    adf::from_markdown_keeping_media(text, &original)
                 }
             } else {
                 json!(text.trim())
@@ -2039,6 +2071,7 @@ mod tests {
     #[test]
     fn long_text_opens_in_a_dialog_where_it_can_be_edited() {
         let host = connected();
+        *host.spec.borrow_mut() = Some("0.1.3".into());
         host.answer("GET", "/rest/api/3/issue/P-1", 200, json!({ "key": "P-1", "fields": {
             "description": { "type": "doc", "version": 1, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "All of it" }] }] }
         } }));
@@ -2058,7 +2091,16 @@ mod tests {
         .unwrap();
         let dialog = opened.dialog.unwrap();
         assert_eq!(dialog.title, "P-1 · Description");
-        let form = serde_json::to_value(&dialog.ui).unwrap();
+        // A description shows rendered, with a switch to the markdown as written, and Edit opens its editor.
+        let shown = serde_json::to_value(&dialog.ui).unwrap();
+        assert_eq!(shown["children"][0]["type"], "markdown");
+        assert_eq!(shown["children"][0]["text"], "All of it");
+        assert_eq!(shown["children"][0]["toggle"], true);
+        assert_eq!(
+            shown["children"][1]["children"][0]["action"]["host"]["type"],
+            "toggle"
+        );
+        let form = &shown["children"][2]["children"][0];
         assert_eq!(form["type"], "form");
         assert_eq!(form["fields"][0]["value"], "All of it");
         let saved = action(

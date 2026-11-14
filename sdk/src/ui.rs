@@ -4,6 +4,7 @@
 use crate::protocol::HostAction;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -26,7 +27,16 @@ pub enum Node {
         strong: bool,
     },
     /// Markdown, sanitized by Task Proxy before it is shown.
-    Markdown { text: String },
+    Markdown {
+        text: String,
+        /// Images the markdown shows, by the name its `![alt](name)` uses, each a `data:image/...;base64,` URI.
+        /// Task Proxy shows no other images, so a plugin never loads anything from the web. Since spec 0.1.3.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        images: BTreeMap<String, String>,
+        /// Adds a switch between the rendered markdown and the text as written. Since spec 0.1.3.
+        #[serde(default, skip_serializing_if = "is_false")]
+        toggle: bool,
+    },
     Badge {
         text: String,
         #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -178,6 +188,10 @@ fn is_false(value: &bool) -> bool {
 pub struct Property {
     pub label: String,
     pub value: Node,
+    /// What clicking the label switches the value to, such as a form that changes it. Since spec 0.1.3: older
+    /// hosts show only the value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edit: Option<Node>,
 }
 
 /// One item of a [`Node::Reorder`].
@@ -227,7 +241,8 @@ impl Action {
         }
     }
 
-    /// An action Task Proxy runs itself, such as creating a branch.
+    /// An action Task Proxy runs itself, such as creating a branch. As a form's `submit`, the form's values fill
+    /// the host action's fields of the same name, such as a branch's `name` (since spec 0.1.3).
     pub fn host(label: impl Into<String>, host: HostAction) -> Self {
         Action {
             label: label.into(),
@@ -393,7 +408,11 @@ pub fn strong(text: impl Into<String>) -> Node {
 }
 
 pub fn markdown(text: impl Into<String>) -> Node {
-    Node::Markdown { text: text.into() }
+    Node::Markdown {
+        text: text.into(),
+        images: BTreeMap::new(),
+        toggle: false,
+    }
 }
 
 pub fn badge(text: impl Into<String>, theme: &str) -> Node {
@@ -473,6 +492,7 @@ pub fn property(label: impl Into<String>, value: Node) -> Property {
     Property {
         label: label.into(),
         value,
+        edit: None,
     }
 }
 

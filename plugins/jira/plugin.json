@@ -1,7 +1,7 @@
 {
     "id": "jira",
     "name": "Jira",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "spec": ["0.1.0"],
     "apiVersion": 1,
     "description": "Work with Jira Cloud without leaving Task Proxy: your issues and your team's, each issue with its parents through Views you design, new issues, a branch for each issue, and your Jira notifications in Task Proxy's alerts.",
@@ -34,6 +34,7 @@
         { "id": "all", "name": "All Issues", "icon": "list-check" },
         { "id": "create", "name": "Create Issue", "icon": "plus" },
         { "id": "views", "name": "Views", "icon": "layers" },
+        { "id": "branches", "name": "Branch Names", "icon": "code-branch" },
         { "id": "notifications", "name": "Notifications", "icon": "bell" },
         { "id": "issue", "name": "Issue", "icon": "ticket", "hidden": true }
     ],

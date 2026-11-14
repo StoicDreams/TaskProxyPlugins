@@ -146,6 +146,16 @@ impl<'a> Jira<'a> {
         }))
     }
 
+    /// A file from the REST API, such as an attachment, as base64, or `None` when Jira did not send it.
+    pub fn get_base64(&self, path: &str) -> Result<Option<String>> {
+        let response = self.host.http(
+            &HttpRequest::new("GET", format!("{}/rest/api/3/{}", self.site, path))
+                .header("Authorization", self.auth.clone())
+                .base64(),
+        )?;
+        Ok(response.is_success().then_some(response.body))
+    }
+
     pub fn get(&self, path: &str) -> Result<Value> {
         self.send(HttpRequest::new(
             "GET",

@@ -16,6 +16,10 @@ pub struct HttpRequest {
     /// The body as text, usually JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
+    /// `base64` answers with the body's bytes as base64, for images and other files that are not text. Since
+    /// spec 0.1.3: older hosts answer with text, which corrupts them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<String>,
 }
 
 impl HttpRequest {
@@ -29,6 +33,12 @@ impl HttpRequest {
 
     pub fn header(mut self, name: &str, value: impl Into<String>) -> Self {
         self.headers.insert(name.to_string(), value.into());
+        self
+    }
+
+    /// Asks for the response body as base64, for a file that is not text.
+    pub fn base64(mut self) -> Self {
+        self.encoding = Some("base64".into());
         self
     }
 

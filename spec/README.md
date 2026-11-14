@@ -63,7 +63,8 @@ Those releases also do not check `spec`, so they run a plugin that lists `0.1.1`
 | 0.1.0 | Released | The first spec: pages, actions, the Git Controller card, notifications, the screens Task Proxy draws, and the host calls for variables, storage, project files, the current branch, the clock, and HTTPS. |
 | 0.1.1 | Released | The `hostInfo` host call. The manifest's `spec` list, and the catalog's `spec` and `versions`. |
 | 0.1.2 | Released | The `reorder` node, for items the user drags into order, and forms' `inline`, for fields and buttons in one row. |
-| 0.1.3 | Draft | Processes, for the Task Manager plugin: the `processes` permission, the `processes` host call, and the `process.stop` and `process.kill` host actions. |
+| 0.1.3 | Released | Images in markdown, from data URIs, and HTTP answers as base64 to download them. A switch between rendered and raw markdown. Properties that switch to an editor when their label is clicked. Forms that fill a host action's fields, such as a branch's name. |
+| 0.1.4 | Draft | Processes, for the Task Manager plugin: the `processes` permission, the `processes` host call, and the `process.stop` and `process.kill` host actions. |
 
 ## Task Proxy releases
 
@@ -71,7 +72,8 @@ Those releases also do not check `spec`, so they run a plugin that lists `0.1.1`
 |---|---|
 | 0.1.115 to 0.1.117 | An early form of 0.1.0, as `apiVersion: 1`, without the `select`, `clip`, `panel`, and `inputs` nodes, sortable columns, dialogs, mentions, or notifications. Plugins drawn with those show placeholders. |
 | 0.1.118 to 0.1.121 | 0.1.0, as `apiVersion: 1`. `spec` is not read. |
-| 0.1.122 and later | 0.1.2. Checks `spec`, and offers the newest catalog version it can run. |
+| 0.1.122 | 0.1.2. Checks `spec`, and offers the newest catalog version it can run. |
+| 0.1.123 and later | 0.1.3 |
 
 Add a row when a release changes what it supports.
 
@@ -82,7 +84,7 @@ Each plugin version records the spec versions it supports in its `plugin.json`, 
 | Plugin | Versions | Spec versions |
 |---|---|---|
 | Jira | 0.1.0 to 0.1.2 | 0.1.0, as `apiVersion: 1` |
-| Jira | 0.1.3 and later | 0.1.0, with drag and drop in its column editor where Task Proxy supports 0.1.2 |
+| Jira | 0.1.3 and later | 0.1.0, with drag and drop in its column editor where Task Proxy supports 0.1.2, and description images, editable View fields, and editable branch names where it supports 0.1.3 |
 
 Add a row when a plugin changes the spec versions it supports.
 

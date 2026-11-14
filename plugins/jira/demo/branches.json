@@ -1,0 +1,111 @@
+{
+  "children": [
+    {
+      "muted": true,
+      "text": "The format branches are named with when you create one from an issue. It is kept for this Jira sign-in, so projects that share the sign-in share it.",
+      "type": "text"
+    },
+    {
+      "fields": [
+        {
+          "kind": "text",
+          "label": "Format",
+          "name": "format",
+          "placeholder": "{key}-{summary|slug|max:40}",
+          "required": true,
+          "value": "{type|map:Bug=bugfix,*=feature}/{key}-{summary|slug|max:30}"
+        },
+        {
+          "kind": "text",
+          "label": "Preview with",
+          "name": "key",
+          "placeholder": "An issue key, or blank for a sample issue",
+          "value": "ATL-142"
+        }
+      ],
+      "inline": true,
+      "submit": {
+        "icon": "eye",
+        "id": "branches.preview",
+        "label": "Preview"
+      },
+      "type": "form"
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "muted": true,
+              "text": "For ATL-142:",
+              "type": "text"
+            },
+            {
+              "text": "ATL-142",
+              "type": "badge"
+            },
+            {
+              "muted": true,
+              "text": "Show CI status on the dashboard",
+              "type": "text"
+            }
+          ],
+          "type": "row"
+        },
+        {
+          "children": [
+            {
+              "strong": true,
+              "text": "Branch",
+              "type": "text"
+            },
+            {
+              "text": "`feature/ATL-142-show-ci-status-on-the`",
+              "type": "markdown"
+            }
+          ],
+          "type": "row"
+        },
+        {
+          "muted": true,
+          "text": "This format is not saved yet.",
+          "type": "text"
+        },
+        {
+          "children": [
+            {
+              "action": {
+                "icon": "save",
+                "id": "branches.save",
+                "label": "Save this format",
+                "params": {
+                  "format": "{type|map:Bug=bugfix,*=feature}/{key}-{summary|slug|max:30}"
+                }
+              },
+              "theme": "primary",
+              "type": "button"
+            }
+          ],
+          "type": "toolbar"
+        }
+      ],
+      "key": "branch-preview",
+      "open": true,
+      "title": "Preview",
+      "type": "section"
+    },
+    {
+      "children": [
+        {
+          "text": "A format is text with **parts** in braces, such as `{key}`, that are filled in from the issue. Anything outside braces is kept as it is, so `feature/{key}` starts every branch with `feature/`.\n\n| Part | Is | For PROJ-123 |\n|---|---|---|\n| `{key}` | The issue's key | `PROJ-123` |\n| `{project}` | The project's key | `PROJ` |\n| `{number}` | The issue's number | `123` |\n| `{summary}` | The summary as written | `Fix the login timeout` |\n| `{type}` | The issue type | `Bug` |\n| `{parent}` | The parent's key, or nothing | `PROJ-100` |\n| `{parent.summary}` | The parent's summary | `Faster sign in` |\n\nAdd **filters** after a part with `|`, and they run in order, as in `{summary|slug|max:40}`.\n\n| Filter | Does | Example |\n|---|---|---|\n| `slug` | Lowercase words joined by `-` | `fix-the-login-timeout` |\n| `snake` | Lowercase words joined by `_` | `fix_the_login_timeout` |\n| `lower`, `upper` | Changes the case | `proj-123`, `PROJ-123` |\n| `max:N` | Cuts to N characters, at a word break | `max:12` after `slug` makes `fix-the` |\n| `map:A=B,C=D,*=E` | Swaps a value for another. `*` is used for anything else | `map:Bug=bugfix,Story=feature,*=task` on `{type}` makes `bugfix` |\n\nSome examples:\n\n- `{key}-{summary|slug|max:40}`, the default: `PROJ-123-fix-the-login-timeout-on-slow-networks`\n- `feature/{key}_{summary|snake|max:20}`: `feature/PROJ-123_fix_the_login`\n- `{type|map:Bug=bugfix,*=feature}/{key|lower}-{summary|slug}`: `bugfix/proj-123-fix-the-login-timeout-on-slow-networks`\n\nCharacters git does not allow, such as spaces, `~`, `^`, `:`, `?`, `*`, and `..`, are taken out, and a part that is empty, such as `{parent}` for an issue with no parent, leaves no doubled `-` or `/`. You can still change the name before creating each branch.",
+          "type": "markdown"
+        }
+      ],
+      "key": "branch-guide",
+      "open": false,
+      "title": "How formats work",
+      "type": "section"
+    }
+  ],
+  "type": "stack"
+}

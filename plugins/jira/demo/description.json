@@ -1,0 +1,70 @@
+{
+  "dialog": {
+    "title": "ATL-142 · Description",
+    "ui": {
+      "children": [
+        {
+          "images": {
+            "media-0": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWgAAACMCAIAAADeJaSiAAACJklEQVR42u3dsQ0CIRSA4evd4gpLKivbS5zJcW4cG7VzHgeg4EHuLgpf8k0A4Q/FI0yn+wugymQJAOEAhAMQDkA4AOEAEA5AOADhAIQDEA4A4QCEAxAOQDgA4QAQDkA4AOEAhAMQDkA4AIQDEA5AOIC/D8d8TgBVhAMQDkA4AOEAhAMQDgDhAIQDEA5AOADhABAOQDiA3w7H5XoDBiEcgHAAwgEIByAcwgHCcXw40rrYAxCOaC9yNgOEo64a2gHC0VKNeDsezw8HcDwQDoQD4UA4GCQcxWoE2+FICwduHG4cwoFwCIdwIBzCIRxgjgMwOQp4qwIIByAcwgEIByAcgHAAfYcDQDgA4QCEAxAOQDgA4bAEgHAAwgEIBzBKOAzhgpFz4QCEAxAOQDgA4QCEY79wvGfFAeEI9yJnM0A46qqhHSAcLdWIt8Ovrn6lRTiEQzgQDuFAOIRjw3AUqxFsh4MnHLhxuHEIB8IhHAiHcAgHwoE5DsDkKOCtCiAcgHAIByAcgHAAwgH0HQ4A4QCEAxAOQDgA4QCEwxIAwgEIByAcwCjhMIQLRs6FAxAOQDgA4QCEAxCO/cKR1sUegHBEe5GzGSAcddXQDhCOlmrE2+HvVfxKKxzCgXAIh3AgHMKxYTiK1Qi2w/FAONw43DgQDuEQDoRDOIQD4cAcB2ByFPBWBRAOQDiEAxAOQDgA4QD6DgeAcADCAQgHIByAcADCYQkA4QB29wXgVo5ClUUmhAAAAABJRU5ErkJggg=="
+          },
+          "text": "Show the latest CI result next to each repo on the dashboard, so a failed build is seen right away.\n\n![dashboard.png](media-0)\n\n- Use the same icons as the Git Controller\n\n- Refresh when a run finishes",
+          "toggle": true,
+          "type": "markdown"
+        },
+        {
+          "children": [
+            {
+              "action": {
+                "host": {
+                  "key": "cell-edit",
+                  "type": "toggle"
+                },
+                "id": "",
+                "label": "Edit"
+              },
+              "theme": "secondary",
+              "type": "button"
+            },
+            {
+              "action": {
+                "id": "cell.close",
+                "label": "Close"
+              },
+              "theme": "secondary",
+              "type": "button"
+            }
+          ],
+          "type": "toolbar"
+        },
+        {
+          "children": [
+            {
+              "fields": [
+                {
+                  "kind": "textarea",
+                  "label": "Description",
+                  "name": "value",
+                  "placeholder": "Markdown: **bold**, *italic*, `code`, lists, and links. Keep a ![name](media-0) line to keep its image.",
+                  "value": "Show the latest CI result next to each repo on the dashboard, so a failed build is seen right away.\n\n![dashboard.png](media-0)\n\n- Use the same icons as the Git Controller\n\n- Refresh when a run finishes"
+                }
+              ],
+              "submit": {
+                "id": "cell.save",
+                "label": "Save",
+                "params": {
+                  "field": "description",
+                  "key": "ATL-142"
+                }
+              },
+              "type": "form"
+            }
+          ],
+          "key": "cell-edit",
+          "open": false,
+          "type": "panel"
+        }
+      ],
+      "type": "stack"
+    }
+  }
+}

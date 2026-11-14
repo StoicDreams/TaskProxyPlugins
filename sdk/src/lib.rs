@@ -27,7 +27,7 @@ pub use serde_json::{self, Map, Value, json};
 
 /// The newest plugin spec version this SDK speaks. A manifest lists the spec versions a plugin supports as `spec`,
 /// each the lowest patch of its line the plugin needs, which is often lower than this. See `spec/` in this repo.
-pub const SPEC_VERSION: &str = "0.1.2";
+pub const SPEC_VERSION: &str = "0.1.3";
 
 /// What a manifest names as `apiVersion` while it supports spec line 0.1, for Task Proxy 0.1.121 and earlier,
 /// which read no `spec`.
