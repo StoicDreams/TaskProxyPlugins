@@ -143,27 +143,32 @@ pub fn host() -> FakeHost {
         comment("Priya Shah", "2026-11-10T09:12:00.000+0000", "Design is in the Release Visibility doc. The icon should match the repo list."),
         comment("Sam Lee", "2026-11-11T15:30:00.000+0000", "Icons are in. Working on refreshing when a run finishes.")
     ] }));
+    // The demo's Task Proxy draws spec 0.1.2, so the columns editor drags.
+    *host.spec.borrow_mut() = Some("0.1.2".into());
     host.store.borrow_mut().insert(
         "columns.issues".into(),
         json!([
-            [
-                "summary",
-                "status",
-                "priority",
-                "sprint",
-                "storyPoints",
-                "comment"
-            ],
-            ["summary"],
-            []
+            { "layer": 0, "field": "issuekey" },
+            { "layer": 0, "field": "summary" },
+            { "layer": 0, "field": "status" },
+            { "layer": 0, "field": "priority" },
+            { "layer": 0, "field": "sprint" },
+            { "layer": 0, "field": "storyPoints" },
+            { "layer": 0, "field": "comment" },
+            { "layer": 1, "field": "summary" }
         ]),
     );
     host.store.borrow_mut().insert(
         "columns.all".into(),
         json!([
-            ["summary", "status", "assignee", "storyPoints", "comment"],
-            ["summary"],
-            []
+            { "layer": 0, "field": "issuekey" },
+            { "layer": 1, "field": "issuekey" },
+            { "layer": 0, "field": "summary" },
+            { "layer": 0, "field": "status" },
+            { "layer": 0, "field": "assignee" },
+            { "layer": 0, "field": "storyPoints" },
+            { "layer": 0, "field": "comment" },
+            { "layer": 1, "field": "summary" }
         ]),
     );
     host.answer("GET", "/rest/api/3/issue/ATL-142", 200, issue("ATL-142", "Task", "Show CI status on the dashboard", json!({

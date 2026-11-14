@@ -18,14 +18,19 @@ pub mod host;
 pub mod protocol;
 pub mod ui;
 
-pub use host::{Host, HttpRequest, HttpResponse};
+pub use host::{Host, HostInfo, HttpRequest, HttpResponse, host_supports};
 pub use protocol::{
     ActionRequest, ActionResult, BranchInfoRequest, Dialog, HostAction, Message, Navigate,
     Notification, NotificationLink, NotificationReadRequest, NotificationsRequest, RenderRequest,
 };
 pub use serde_json::{self, Map, Value, json};
 
-/// The plugin API version this SDK speaks. A manifest names it as `apiVersion`.
+/// The newest plugin spec version this SDK speaks. A manifest lists the spec versions a plugin supports as `spec`,
+/// each the lowest patch of its line the plugin needs, which is often lower than this. See `spec/` in this repo.
+pub const SPEC_VERSION: &str = "0.1.2";
+
+/// What a manifest names as `apiVersion` while it supports spec line 0.1, for Task Proxy 0.1.121 and earlier,
+/// which read no `spec`.
 pub const API_VERSION: u32 = 1;
 
 /// An error a plugin returns. Task Proxy shows the message to the user.

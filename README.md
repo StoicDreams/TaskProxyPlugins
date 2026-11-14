@@ -21,10 +21,13 @@ Plugins never send HTML or scripts. They describe their screens as data (`sdk/sr
 
 ## Writing a plugin
 
+Start with the [plugin spec](spec/README.md): how spec versions and compatibility work, [spec 0.1](spec/0.1.md) with everything a plugin can declare, export, call, and draw, and the [guidelines for plugin creators](spec/guidelines.md).
+
 1. Copy `plugins/jira` as a starting point: a `cdylib` crate depending on `taskproxy-plugin-sdk`, with a `plugin.json`.
 2. Implement `Plugin` (`render`, `action`, and optionally `branch_info`) and export it with `export_plugin!(MyPlugin)`.
-3. Test it natively with a fake `Host`, as `plugins/jira/src/lib.rs` does in `testing::FakeHost`.
-4. Run `pwsh ./scripts/build.ps1`, then in Task Proxy choose **Plugins → Install from folder** and pick `dist/<id>`.
+3. List the spec versions it supports in `plugin.json`, as `"spec": ["0.1.0"]`, naming the lowest patch it needs, and keep `"apiVersion": 1` beside it for Task Proxy 0.1.121 and earlier.
+4. Test it natively with a fake `Host`, as `plugins/jira/src/lib.rs` does in `testing::FakeHost`.
+5. Run `pwsh ./scripts/build.ps1`, then in Task Proxy choose **Plugins → Install from folder** and pick `dist/<id>`.
 
 ```bash
 cargo test                                            # Every crate's tests, natively

@@ -9,6 +9,8 @@ use taskproxy_plugin_sdk::{Result, Value, json};
 const CACHE_MS: u64 = 24 * 60 * 60 * 1000;
 const CACHE_KEY: &str = "fields";
 
+const STORY_POINTS_NAMES: [&str; 3] = ["Story point estimate", "Story Points", "Story points"];
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct FieldInfo {
     pub id: String,
@@ -131,7 +133,62 @@ impl Fields {
 
     /// Story points is a custom field, named differently in team-managed and company-managed projects.
     pub fn story_points(&self) -> Option<String> {
-        self.by_names(&["Story point estimate", "Story Points", "Story points"])
+        self.story_points_ids().into_iter().next()
+    }
+
+    /// Every story points field on the site. Many sites have both "Story point estimate", for team-managed
+    /// projects, and "Story Points", for company-managed ones, and an issue's points are in only one of them.
+    pub fn story_points_ids(&self) -> Vec<String> {
+        let mut ids = Vec::new();
+        for name in STORY_POINTS_NAMES {
+            for field in &self.list {
+                if field.name.eq_ignore_ascii_case(name) && !ids.contains(&field.id) {
+                    ids.push(field.id.clone());
+                }
+            }
+        }
+        ids
+    }
+
+    pub fn is_story_points(&self, id: &str) -> bool {
+        self.story_points_ids().iter().any(|points| points == id)
+    }
+
+    /// The field ids to ask Jira for, to show these fields: story points brings every story points field.
+    pub fn wanted(&self, reals: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for real in reals {
+            let more = if self.is_story_points(real) {
+                self.story_points_ids()
+            } else {
+                vec![real.clone()]
+            };
+            for id in more {
+                if !out.contains(&id) {
+                    out.push(id);
+                }
+            }
+        }
+        out
+    }
+
+    /// A field's value on an issue. The key is the issue's own, not one of its fields, and story points come
+    /// from whichever of the site's story points fields has a value.
+    pub fn value_of(&self, issue: &Value, real: &str) -> Value {
+        if matches!(real, "issuekey" | "key") {
+            return issue.get("key").cloned().unwrap_or(Value::Null);
+        }
+        let values = issue.get("fields").unwrap_or(&Value::Null);
+        if self.is_story_points(real) {
+            return self
+                .story_points_ids()
+                .iter()
+                .filter_map(|id| values.get(id))
+                .find(|value| !value.is_null())
+                .cloned()
+                .unwrap_or(Value::Null);
+        }
+        values.get(real).cloned().unwrap_or(Value::Null)
     }
 
     pub fn sprint(&self) -> Option<String> {
@@ -154,6 +211,8 @@ impl Fields {
             .iter()
             .filter(|field| !first.iter().any(|chosen| chosen.id == field.id))
             .filter(|field| !HIDDEN.contains(&field.id.as_str()))
+            // One story points column covers every story points field.
+            .filter(|field| !self.is_story_points(&field.id))
             .cloned()
             .collect();
         rest.sort_by_key(|field| field.name.to_ascii_lowercase());
@@ -281,6 +340,28 @@ mod tests {
     use crate::tests::{FakeHost, sample_fields};
 
     #[test]
+    fn values_come_from_the_key_and_whichever_story_points_field_is_set() {
+        let fields = Fields {
+            list: read_list(&sample_fields()),
+        };
+        let story = json!({ "key": "P-10", "fields": {
+            "summary": "Story", "customfield_10016": null, "customfield_10026": 5
+        } });
+        assert_eq!(fields.value_of(&story, "issuekey"), json!("P-10"));
+        assert_eq!(fields.value_of(&story, "key"), json!("P-10"));
+        assert_eq!(fields.value_of(&story, "summary"), json!("Story"));
+        assert_eq!(fields.value_of(&story, "customfield_10016"), json!(5));
+        assert_eq!(fields.value_of(&story, "customfield_10026"), json!(5));
+        assert_eq!(fields.value_of(&story, "missing"), Value::Null);
+        let team = json!({ "key": "T-1", "fields": { "customfield_10016": 3 } });
+        assert_eq!(fields.value_of(&team, "customfield_10016"), json!(3));
+        assert_eq!(
+            fields.wanted(&["summary".into(), "customfield_10016".into()]),
+            vec!["summary", "customfield_10016", "customfield_10026"]
+        );
+    }
+
+    #[test]
     fn fields_are_read_once_a_day_and_custom_ones_found() {
         let host = FakeHost::connected();
         host.answer("GET", "/rest/api/3/field", 200, sample_fields());
@@ -288,6 +369,10 @@ mod tests {
         let fields = Fields::load(&jira).unwrap();
         assert_eq!(fields.story_points().as_deref(), Some("customfield_10016"));
         assert_eq!(fields.sprint().as_deref(), Some("customfield_10020"));
+        assert_eq!(
+            fields.story_points_ids(),
+            vec!["customfield_10016", "customfield_10026"]
+        );
         assert_eq!(fields.name("customfield_10050"), "Acceptance criteria");
         Fields::load(&jira).unwrap();
         assert_eq!(
@@ -310,6 +395,7 @@ mod tests {
                 "customfield_10016",
                 "customfield_10020",
                 "customfield_10050",
+                "issuekey",
                 "customfield_10040"
             ]
         );

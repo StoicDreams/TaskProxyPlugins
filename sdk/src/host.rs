@@ -62,6 +62,51 @@ impl HttpResponse {
     }
 }
 
+/// What `Host::host_info` reports. Since spec 0.1.1.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HostInfo {
+    /// Task Proxy's version, such as `0.1.122`.
+    pub app: String,
+    /// The plugin spec version Task Proxy runs this plugin with: the newest both support.
+    pub spec: String,
+    /// The operating system: `linux`, `macos`, or `windows`.
+    pub platform: String,
+}
+
+impl HostInfo {
+    /// Whether the host runs at least this spec version on the same line, as `0.1.2`.
+    pub fn supports(&self, version: &str) -> bool {
+        spec_at_least(&self.spec, version)
+    }
+}
+
+fn spec_parts(version: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = version
+        .trim()
+        .split('.')
+        .map(|part| part.parse::<u32>().ok());
+    let found = (parts.next()??, parts.next()??, parts.next()??);
+    parts.next().is_none().then_some(found)
+}
+
+/// Whether `have` is `want` or a later patch of the same spec line.
+pub(crate) fn spec_at_least(have: &str, want: &str) -> bool {
+    match (spec_parts(have), spec_parts(want)) {
+        (Some(have), Some(want)) => have.0 == want.0 && have.1 == want.1 && have.2 >= want.2,
+        _ => false,
+    }
+}
+
+/// Whether the host supports this spec version, for drawing a newer node only where it is known. A host that
+/// cannot say, such as Task Proxy 0.1.121 and earlier, runs spec 0.1.0.
+pub fn host_supports(host: &dyn Host, version: &str) -> bool {
+    match host.host_info() {
+        Ok(info) => info.supports(version),
+        Err(_) => spec_at_least("0.1.0", version),
+    }
+}
+
 /// Everything a plugin can ask of Task Proxy.
 pub trait Host {
     /// A variable the manifest declares, from the page, then the project, then global scope.
@@ -80,20 +125,41 @@ pub trait Host {
     fn now_ms(&self) -> Result<u64>;
     /// Sends an HTTPS request to a host the manifest allows.
     fn http(&self, request: &HttpRequest) -> Result<HttpResponse>;
+    /// Task Proxy's version, the spec version it runs the plugin with, and the platform. Since spec 0.1.1: Task
+    /// Proxy 0.1.121 and earlier answer with an error, which means spec 0.1.0.
+    fn host_info(&self) -> Result<HostInfo> {
+        Err(Error::new("This host does not report its details."))
+    }
 }
 
 /// The requests a plugin sends through the `taskproxy_host` import, by `op`.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum HostRequest {
-    Var { key: String },
-    StoreGet { key: String },
-    StoreSet { key: String, value: Option<Value> },
-    ProjectFileRead { path: String },
-    ProjectFileWrite { path: String, text: String },
+    Var {
+        key: String,
+    },
+    StoreGet {
+        key: String,
+    },
+    StoreSet {
+        key: String,
+        value: Option<Value>,
+    },
+    ProjectFileRead {
+        path: String,
+    },
+    ProjectFileWrite {
+        path: String,
+        text: String,
+    },
     CurrentBranch,
     Now,
-    Http { request: HttpRequest },
+    Http {
+        request: HttpRequest,
+    },
+    /// Since spec 0.1.1.
+    HostInfo,
 }
 
 /// Turns a host's `{"ok": ...}` or `{"error": "..."}` answer into a result.
@@ -174,6 +240,9 @@ impl Host for TaskProxy {
             request: request.clone(),
         })
     }
+    fn host_info(&self) -> Result<HostInfo> {
+        self.call(HostRequest::HostInfo)
+    }
 }
 
 #[cfg(test)]
@@ -194,6 +263,10 @@ mod tests {
             serde_json::to_value(HostRequest::CurrentBranch).unwrap(),
             json!({ "op": "currentBranch" })
         );
+        assert_eq!(
+            serde_json::to_value(HostRequest::HostInfo).unwrap(),
+            json!({ "op": "hostInfo" })
+        );
         let http = HostRequest::Http {
             request: HttpRequest::new("POST", "https://x.atlassian.net/a").json(&json!({ "a": 1 })),
         };
@@ -204,6 +277,19 @@ mod tests {
                 "headers": { "Content-Type": "application/json" }, "body": "{\"a\":1}"
             } })
         );
+    }
+
+    #[test]
+    fn spec_versions_compare_within_a_line() {
+        let info = |spec: &str| HostInfo {
+            spec: spec.into(),
+            ..Default::default()
+        };
+        assert!(info("0.1.2").supports("0.1.2"));
+        assert!(info("0.1.3").supports("0.1.0"));
+        assert!(!info("0.1.1").supports("0.1.2"));
+        assert!(!info("0.2.5").supports("0.1.0"));
+        assert!(!info("0.1").supports("0.1.0"));
     }
 
     #[test]

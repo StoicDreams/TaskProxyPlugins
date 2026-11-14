@@ -159,6 +159,7 @@ pub fn issue(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> 
             cancel: None,
             buttons: Vec::new(),
             children: Vec::new(),
+            inline: false,
         },
     ];
     if !moves.is_empty() {
@@ -168,6 +169,7 @@ pub fn issue(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> 
             cancel: None,
             buttons: Vec::new(),
             children: Vec::new(),
+            inline: false,
         });
     }
     children.extend(sections);
@@ -177,6 +179,7 @@ pub fn issue(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> 
         cancel: None,
         buttons: Vec::new(),
         children: Vec::new(),
+        inline: false,
     });
     Ok(ui::stack(children))
 }
@@ -229,6 +232,7 @@ pub fn create(jira: &Jira, page_params: &Map<String, Value>) -> Result<Node> {
         cancel: None,
         buttons: Vec::new(),
         children: Vec::new(),
+        inline: false,
     };
     if project.is_empty() {
         return Ok(ui::stack(vec![project_form]));
@@ -281,6 +285,7 @@ pub fn create(jira: &Jira, page_params: &Map<String, Value>) -> Result<Node> {
             cancel: None,
             buttons: Vec::new(),
             children: Vec::new(),
+            inline: false,
         },
     ]))
 }

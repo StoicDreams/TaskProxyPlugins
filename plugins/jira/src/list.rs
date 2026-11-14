@@ -10,9 +10,11 @@ use crate::pages::{open_issue, param};
 use crate::views::{SPRINT, STORY_POINTS, field_label, layer_name, portable, resolve};
 use serde::{Deserialize, Serialize};
 use taskproxy_plugin_sdk::ui::{
-    self, Action, Choice, Column, Field, FieldKind, Node, Sort, TableRow,
+    self, Action, Choice, Column, Field, FieldKind, Node, ReorderItem, Sort, TableRow,
 };
-use taskproxy_plugin_sdk::{ActionRequest, ActionResult, Error, Host, Map, Result, Value, json};
+use taskproxy_plugin_sdk::{
+    ActionRequest, ActionResult, Error, Host, Map, Result, Value, host_supports, json,
+};
 
 const PAGE_SIZE: u64 = 50;
 /// The issue, its parent, and its grandparent.
@@ -120,36 +122,94 @@ fn saved(host: &dyn Host, list: List) -> Result<Vec<Saved>> {
         .unwrap_or_default())
 }
 
-fn default_columns() -> Vec<Vec<String>> {
-    vec![
-        [
-            "summary",
-            "status",
-            "priority",
-            SPRINT,
-            STORY_POINTS,
-            "updated",
-        ]
-        .map(String::from)
-        .to_vec(),
-        Vec::new(),
-        Vec::new(),
+/// The issue's own key, which Jira lists as a field named Key.
+pub const KEY: &str = "issuekey";
+
+/// One column of a list: a field of the issue (layer 0), its parent (1), or its grandparent (2). Fields are saved
+/// as Views save them, so story points and sprint work on any site.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ListColumn {
+    pub layer: usize,
+    pub field: String,
+}
+
+impl ListColumn {
+    fn new(layer: usize, field: &str) -> Self {
+        ListColumn {
+            layer,
+            field: field.to_string(),
+        }
+    }
+
+    /// Unique in a list, as the column's id in the editor.
+    fn id(&self) -> String {
+        format!("{}:{}", self.layer, self.field)
+    }
+
+    /// The column's title, such as "Story points" or "Parent key".
+    fn label(&self, fields: &Fields) -> String {
+        let name = if self.field == KEY {
+            "Key".to_string()
+        } else {
+            field_label(&self.field, fields)
+        };
+        if self.layer == 0 {
+            name
+        } else {
+            format!("{} {}", layer_name(self.layer), name.to_lowercase())
+        }
+    }
+}
+
+fn default_columns() -> Vec<ListColumn> {
+    [
+        KEY,
+        "summary",
+        "status",
+        "priority",
+        SPRINT,
+        STORY_POINTS,
+        "updated",
     ]
+    .iter()
+    .map(|field| ListColumn::new(0, field))
+    .collect()
 }
 
-/// The fields shown for each layer, as Views save them, so story points and sprint work on any site.
-fn columns(host: &dyn Host, list: List) -> Result<Vec<Vec<String>>> {
-    let mut layers: Vec<Vec<String>> = host
-        .store_get(list.columns_key())?
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or_else(default_columns);
-    layers.resize(LAYERS, Vec::new());
-    layers.truncate(LAYERS);
-    Ok(layers)
+/// The list's columns, in order. Lists once saved their columns as one list per layer, after a Key column that
+/// was always first, so those become the issue's key followed by each layer's columns.
+fn columns(host: &dyn Host, list: List) -> Result<Vec<ListColumn>> {
+    let Some(saved) = host.store_get(list.columns_key())? else {
+        return Ok(default_columns());
+    };
+    let read: Vec<ListColumn> = match &saved {
+        Value::Array(items) if !items.is_empty() && items.iter().all(Value::is_array) => {
+            let mut out = vec![ListColumn::new(0, KEY)];
+            for (layer, fields) in items.iter().take(LAYERS).enumerate() {
+                for field in fields.as_array().into_iter().flatten() {
+                    if let Some(field) = field.as_str() {
+                        out.push(ListColumn::new(layer, field));
+                    }
+                }
+            }
+            out
+        }
+        _ => match serde_json::from_value(saved) {
+            Ok(read) => read,
+            Err(_) => return Ok(default_columns()),
+        },
+    };
+    let mut out: Vec<ListColumn> = Vec::new();
+    for column in read {
+        if column.layer < LAYERS && !out.contains(&column) {
+            out.push(column);
+        }
+    }
+    Ok(out)
 }
 
-fn save_columns(host: &dyn Host, list: List, layers: &[Vec<String>]) -> Result<()> {
-    host.store_set(list.columns_key(), Some(serde_json::to_value(layers)?))
+fn save_columns(host: &dyn Host, list: List, columns: &[ListColumn]) -> Result<()> {
+    host.store_set(list.columns_key(), Some(serde_json::to_value(columns)?))
 }
 
 /// A filter's chosen values, from the page's address.
@@ -235,6 +295,9 @@ fn filter_clause(name: &str, values: &[String]) -> Option<String> {
 fn sort_name(real: &str, fields: &Fields) -> Option<String> {
     if UNSORTABLE.contains(&real) {
         return None;
+    }
+    if real == KEY {
+        return Some("key".into());
     }
     if let Some(number) = real.strip_prefix("customfield_") {
         // Text fields cannot be sorted.
@@ -349,7 +412,7 @@ fn one_line(text: &str) -> String {
 fn is_choice(real: &str, fields: &Fields) -> bool {
     matches!(real, "status" | "priority" | "assignee")
         || fields.sprint().as_deref() == Some(real)
-        || fields.story_points().as_deref() == Some(real)
+        || fields.is_story_points(real)
         || fields
             .find(real)
             .is_some_and(|field| field.kind == "option")
@@ -396,9 +459,10 @@ fn cell(fields: &Fields, real: &str, label: &str, issue: Option<&Value>) -> Node
         return ui::muted("");
     };
     let key = key_of(issue);
-    let value = issue
-        .pointer(&format!("/fields/{}", real))
-        .unwrap_or(&Value::Null);
+    if matches!(real, "issuekey" | "key") {
+        return ui::link(key.to_string(), open_issue(key));
+    }
+    let value = &fields.value_of(issue, real);
     if real == "comment" {
         let latest = latest_comment(value);
         return Node::Clip {
@@ -647,27 +711,27 @@ pub fn page(
     page_params: &Map<String, Value>,
 ) -> Result<Node> {
     let host = jira.host;
-    let layers = columns(host, list)?;
+    let chosen_columns = columns(host, list)?;
     let jql = match param(page_params, "jql") {
         "" => list.default_jql(),
         jql => jql,
     };
     let token = param(page_params, "token");
-    let resolved: Vec<Vec<(String, String)>> = layers
+    // Each column with the site's own field id.
+    let resolved: Vec<(ListColumn, String)> = chosen_columns
         .iter()
-        .map(|layer| {
-            layer
-                .iter()
-                .filter_map(|id| Some((id.clone(), resolve(id, fields)?)))
-                .collect()
-        })
+        .filter_map(|column| Some((column.clone(), resolve(&column.field, fields)?)))
         .collect();
     let wanted = |depth: usize| -> Vec<String> {
-        resolved[depth]
-            .iter()
-            .map(|(_, real)| real.clone())
-            .collect()
+        fields.wanted(
+            &resolved
+                .iter()
+                .filter(|(column, _)| column.layer == depth)
+                .map(|(_, real)| real.clone())
+                .collect::<Vec<_>>(),
+        )
     };
+    let uses = |depth: usize| resolved.iter().any(|(column, _)| column.layer == depth);
     let mut first = wanted(0);
     first.push("parent".into());
     let mut body = json!({
@@ -680,7 +744,7 @@ pub fn page(
     }
     let found = jira.post("search/jql", &body)?;
     let issues = issues_of(&found);
-    let want_parents = !resolved[1].is_empty() || !resolved[2].is_empty();
+    let want_parents = uses(1) || uses(2);
     let parents = if want_parents {
         let keys = unique(
             issues
@@ -691,7 +755,7 @@ pub fn page(
     } else {
         Vec::new()
     };
-    let grandparents = if !resolved[2].is_empty() {
+    let grandparents = if uses(2) {
         let keys = unique(
             parents
                 .iter()
@@ -707,52 +771,44 @@ pub fn page(
     };
 
     let sort = sort_of(page_params);
-    let mut table_columns: Vec<Column> = vec!["Key".into()];
-    for (depth, layer) in resolved.iter().enumerate() {
-        for (id, real) in layer {
-            let name = field_label(id, fields);
-            let label = if depth == 0 {
-                name
-            } else {
-                format!("{} {}", layer_name(depth), name.to_lowercase())
-            };
-            if depth == 0 && sort_name(real, fields).is_some() {
-                table_columns.push(Column::Sortable {
-                    action: Some(
-                        Action::new("list.sort", format!("Sort by {}", label))
-                            .param("field", id.clone()),
-                    ),
-                    sort: sort
-                        .as_ref()
-                        .filter(|(field, _)| field == id)
-                        .map(|(_, dir)| *dir),
-                    label,
-                });
-            } else {
-                table_columns.push(label.into());
-            }
+    let mut table_columns: Vec<Column> = Vec::new();
+    for (column, real) in &resolved {
+        let label = column.label(fields);
+        if column.layer == 0 && sort_name(real, fields).is_some() {
+            table_columns.push(Column::Sortable {
+                action: Some(
+                    Action::new("list.sort", format!("Sort by {}", label))
+                        .param("field", column.field.clone()),
+                ),
+                sort: sort
+                    .as_ref()
+                    .filter(|(field, _)| *field == column.field)
+                    .map(|(_, dir)| *dir),
+                label,
+            });
+        } else {
+            table_columns.push(label.into());
         }
     }
     let rows: Vec<TableRow> = issues
         .iter()
         .map(|issue| {
-            let key = key_of(issue).to_string();
             let parent = by_key(&parents, parent_key(issue));
             let grandparent = parent
                 .as_ref()
                 .and_then(|parent| by_key(&grandparents, parent_key(parent)));
             let at_depth = [Some(issue.clone()), parent, grandparent];
-            let mut cells = vec![ui::link(key.clone(), open_issue(&key))];
-            for (depth, layer) in resolved.iter().enumerate() {
-                for (id, real) in layer {
-                    cells.push(cell(
+            let cells = resolved
+                .iter()
+                .map(|(column, real)| {
+                    cell(
                         fields,
                         real,
-                        &field_label(id, fields),
-                        at_depth[depth].as_ref(),
-                    ));
-                }
-            }
+                        &column.label(fields),
+                        at_depth[column.layer].as_ref(),
+                    )
+                })
+                .collect();
             TableRow {
                 cells,
                 action: None,
@@ -809,6 +865,7 @@ pub fn page(
                 }],
             ),
         ],
+        inline: false,
     }];
 
     let mut saved_links = vec![ui::toggle("Columns", COLUMNS_PANEL)];
@@ -836,7 +893,7 @@ pub fn page(
     children.push(ui::panel(
         COLUMNS_PANEL,
         false,
-        columns_editor(fields, &layers),
+        columns_editor(host, fields, &chosen_columns),
     ));
     children.push(ui::form(
         vec![Field::new(FieldKind::Text, "name", "Save this search as").placeholder("Sprint bugs")],
@@ -871,61 +928,106 @@ pub fn page(
     Ok(ui::stack(children))
 }
 
-fn columns_editor(fields: &Fields, layers: &[Vec<String>]) -> Vec<Node> {
-    let choices: Vec<Choice> = fields
+fn columns_editor(host: &dyn Host, fields: &Fields, chosen: &[ListColumn]) -> Vec<Node> {
+    let mut choices: Vec<Choice> = fields
         .choices()
         .into_iter()
         .map(|field| {
             let id = portable(&field.id, fields);
-            let label = field_label(&id, fields);
+            let label = if id == KEY {
+                "Key".to_string()
+            } else {
+                field_label(&id, fields)
+            };
             Choice::new(id, label)
         })
         .collect();
-    let mut nodes = vec![ui::muted(
-        "Choose the columns for each issue, its parent, and its grandparent. They are saved for you.",
-    )];
-    for (depth, layer) in layers.iter().enumerate() {
-        let mut items = Vec::new();
-        for (index, id) in layer.iter().enumerate() {
-            let at = |action: &str, label: &str| {
-                Action::new(action, label)
-                    .param("layer", depth)
-                    .param("index", index)
-            };
-            let mut line = vec![ui::text(field_label(id, fields))];
-            if index > 0 {
-                line.push(ui::link(
-                    "←",
-                    at("columns.move", "Move left").param("by", -1),
-                ));
-            }
-            if index + 1 < layer.len() {
-                line.push(ui::link(
-                    "→",
-                    at("columns.move", "Move right").param("by", 1),
-                ));
-            }
-            line.push(ui::link("✕", at("columns.remove", "Remove")));
-            items.push(ui::row(line));
-        }
-        if items.is_empty() {
-            items.push(ui::muted("No columns."));
-        }
-        let available: Vec<Choice> = choices
+    if !choices.iter().any(|choice| choice.value == KEY) {
+        choices.insert(0, Choice::new(KEY, "Key"));
+    }
+    let drag = host_supports(host, "0.1.2");
+    let mut nodes = vec![ui::muted(if drag {
+        "Choose columns from each issue, its parent, and its grandparent, and drag them into order. They are saved for you."
+    } else {
+        "Choose columns from each issue, its parent, and its grandparent, and put them in order. They are saved for you."
+    })];
+    // One row adds a column from any layer: Add a column | Issue | Parent | Grandparent | Add.
+    let pickers: Vec<Field> = (0..LAYERS)
+        .map(|layer| {
+            let mut options = vec![Choice::new("", "Choose…")];
+            options.extend(
+                choices
+                    .iter()
+                    .filter(|choice| !chosen.contains(&ListColumn::new(layer, &choice.value)))
+                    .cloned(),
+            );
+            Field::new(
+                FieldKind::Select,
+                &format!("layer{}", layer),
+                layer_name(layer),
+            )
+            .options(options)
+            .value("")
+        })
+        .collect();
+    nodes.push(ui::row(vec![
+        ui::strong("Add a column"),
+        Node::Form {
+            fields: pickers,
+            submit: Action::new("columns.add", "Add").icon("plus"),
+            cancel: None,
+            buttons: Vec::new(),
+            children: Vec::new(),
+            inline: true,
+        },
+    ]));
+    if chosen.is_empty() {
+        nodes.push(ui::muted("No columns."));
+    } else if drag {
+        nodes.push(Node::Reorder {
+            items: chosen
+                .iter()
+                .enumerate()
+                .map(|(index, column)| ReorderItem {
+                    id: column.id(),
+                    children: vec![
+                        ui::text(column.label(fields)),
+                        ui::link(
+                            "✕",
+                            Action::new(
+                                "columns.remove",
+                                format!("Remove {}", column.label(fields)),
+                            )
+                            .param("index", index),
+                        ),
+                    ],
+                })
+                .collect(),
+            action: Action::new("columns.order", "Reorder the columns"),
+        });
+    } else {
+        // Hosts before spec 0.1.2 cannot drag, so each column moves with arrows.
+        let items = chosen
             .iter()
-            .filter(|choice| !layer.contains(&choice.value))
-            .cloned()
+            .enumerate()
+            .map(|(index, column)| {
+                let at =
+                    |action: &str, label: &str| Action::new(action, label).param("index", index);
+                let mut line = vec![ui::text(column.label(fields))];
+                if index > 0 {
+                    line.push(ui::link("↑", at("columns.move", "Move up").param("by", -1)));
+                }
+                if index + 1 < chosen.len() {
+                    line.push(ui::link(
+                        "↓",
+                        at("columns.move", "Move down").param("by", 1),
+                    ));
+                }
+                line.push(ui::link("✕", at("columns.remove", "Remove")));
+                ui::row(line)
+            })
             .collect();
-        items.push(ui::form(
-            vec![Field::new(FieldKind::Select, "field", "Add a column").options(available)],
-            Action::new("columns.add", "Add").param("layer", depth),
-        ));
-        nodes.push(ui::section(
-            format!("columns-{}", depth),
-            layer_name(depth),
-            depth == 0,
-            items,
-        ));
+        nodes.push(ui::stack(items));
     }
     nodes.push(ui::toolbar(vec![ui::button(
         Action::new("columns.reset", "Reset columns")
@@ -1104,7 +1206,7 @@ fn choices_for(jira: &Jira, fields: &Fields, key: &str, real: &str) -> Result<Ve
         choices.extend(sprints(jira, Some(project)));
         return Ok(choices);
     }
-    if fields.story_points().as_deref() == Some(real) {
+    if fields.is_story_points(real) {
         let mut choices = vec![Choice::new("", "None")];
         choices.extend(POINTS.iter().map(|points| Choice::new(*points, *points)));
         return Ok(choices);
@@ -1135,7 +1237,8 @@ fn set_choice(jira: &Jira, fields: &Fields, key: &str, real: &str, value: &str) 
                 &json!({ "issues": [key] }),
             )?;
         }
-    } else if fields.story_points().as_deref() == Some(real) {
+    } else if fields.is_story_points(real) {
+        let real = story_points_target(jira, fields, key, real);
         let points = if value.is_empty() {
             Value::Null
         } else {
@@ -1145,7 +1248,7 @@ fn set_choice(jira: &Jira, fields: &Fields, key: &str, real: &str, value: &str) 
                     .map_err(|_| Error::new("Story points must be a number."))?
             )
         };
-        jira.put(&issue, &json!({ "fields": { real: points } }))?;
+        jira.put(&issue, &json!({ "fields": { real.as_str(): points } }))?;
     } else {
         let choice = if value.is_empty() {
             Value::Null
@@ -1155,6 +1258,23 @@ fn set_choice(jira: &Jira, fields: &Fields, key: &str, real: &str, value: &str) 
         jira.put(&issue, &json!({ "fields": { real: choice } }))?;
     }
     Ok(())
+}
+
+/// Which story points field to set on an issue: the one its edit screen has, since a site with several only shows
+/// the one its project uses.
+fn story_points_target(jira: &Jira, fields: &Fields, key: &str, real: &str) -> String {
+    let ids = fields.story_points_ids();
+    if ids.len() < 2 {
+        return real.to_string();
+    }
+    jira.get(&format!("issue/{}/editmeta", encode(key)))
+        .ok()
+        .and_then(|meta| {
+            ids.iter()
+                .find(|id| meta.pointer(&format!("/fields/{}", id)).is_some())
+                .cloned()
+        })
+        .unwrap_or_else(|| real.to_string())
 }
 
 fn text_dialog(jira: &Jira, fields: &Fields, key: &str, real: &str) -> Result<Node> {
@@ -1184,6 +1304,7 @@ fn text_dialog(jira: &Jira, fields: &Fields, key: &str, real: &str) -> Result<No
         cancel: Some(Action::new("cell.close", "Cancel")),
         buttons: Vec::new(),
         children: Vec::new(),
+        inline: false,
     })
 }
 
@@ -1273,43 +1394,61 @@ pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResul
             host.store_set(list.saved_key(), Some(serde_json::to_value(&all)?))?;
             ActionResult::refresh()
         }
-        "columns.add" | "columns.remove" | "columns.move" | "columns.reset" => {
-            let mut layers = columns(host, list)?;
-            let depth = param_i64(p, "layer") as usize;
+        "columns.add" | "columns.remove" | "columns.move" | "columns.order" | "columns.reset" => {
+            let mut chosen = columns(host, list)?;
             let index = param_i64(p, "index") as usize;
             match request.action.as_str() {
-                "columns.reset" => layers = default_columns(),
+                "columns.reset" => chosen = default_columns(),
                 "columns.add" => {
-                    let field = form_text(request, "field");
-                    if field.is_empty() {
+                    let picked: Vec<ListColumn> = (0..LAYERS)
+                        .filter_map(|layer| {
+                            let field = form_text(request, &format!("layer{}", layer));
+                            (!field.is_empty()).then(|| ListColumn::new(layer, field))
+                        })
+                        .collect();
+                    if picked.is_empty() {
                         return Ok(Some(
                             ActionResult::default()
                                 .with_message("Choose a column to add.", "warning"),
                         ));
                     }
-                    if let Some(layer) = layers.get_mut(depth)
-                        && !layer.iter().any(|id| id == field)
-                    {
-                        layer.push(field.to_string());
-                    }
-                }
-                "columns.remove" => {
-                    if let Some(layer) = layers.get_mut(depth)
-                        && index < layer.len()
-                    {
-                        layer.remove(index);
-                    }
-                }
-                _ => {
-                    if let Some(layer) = layers.get_mut(depth) {
-                        let target = index as i64 + param_i64(p, "by");
-                        if index < layer.len() && (0..layer.len() as i64).contains(&target) {
-                            layer.swap(index, target as usize);
+                    for column in picked {
+                        if !chosen.contains(&column) {
+                            chosen.push(column);
                         }
                     }
                 }
+                "columns.remove" => {
+                    if index < chosen.len() {
+                        chosen.remove(index);
+                    }
+                }
+                "columns.order" => {
+                    let order: Vec<&str> = request
+                        .form
+                        .get("order")
+                        .and_then(Value::as_array)
+                        .map(|ids| ids.iter().filter_map(Value::as_str).collect())
+                        .unwrap_or_default();
+                    let mut rest = chosen.clone();
+                    let mut ordered = Vec::new();
+                    for id in order {
+                        if let Some(at) = rest.iter().position(|column| column.id() == id) {
+                            ordered.push(rest.remove(at));
+                        }
+                    }
+                    // Columns the order did not name, such as one added in another window, stay at the end.
+                    ordered.extend(rest);
+                    chosen = ordered;
+                }
+                _ => {
+                    let target = index as i64 + param_i64(p, "by");
+                    if index < chosen.len() && (0..chosen.len() as i64).contains(&target) {
+                        chosen.swap(index, target as usize);
+                    }
+                }
             }
-            save_columns(host, list, &layers)?;
+            save_columns(host, list, &chosen)?;
             ActionResult::refresh()
         }
         "cell.options" => {
@@ -1508,7 +1647,7 @@ mod tests {
             .unwrap()
             .clone();
         let titles: Vec<Value> = table["columns"].as_array().unwrap().clone();
-        assert_eq!(titles[0], "Key");
+        assert_eq!(titles[0]["label"], "Key");
         assert_eq!(titles[1]["label"], "Summary");
         assert_eq!(titles[1]["sort"], "asc");
         assert_eq!(titles[3]["label"], "Story points");
@@ -1610,8 +1749,16 @@ mod tests {
         );
     }
 
+    fn column_ids(host: &FakeHost, list: List) -> Vec<String> {
+        columns(host, list)
+            .unwrap()
+            .iter()
+            .map(ListColumn::id)
+            .collect()
+    }
+
     #[test]
-    fn columns_are_added_moved_and_removed_per_page() {
+    fn columns_from_any_layer_are_added_ordered_and_removed_in_one_list() {
         let host = connected();
         let jira = Jira::connect(&host).unwrap().unwrap();
         let run = |name: &str, params: Value, form: Value| {
@@ -1619,32 +1766,194 @@ mod tests {
                 .unwrap()
                 .unwrap()
         };
+        let empty = run(
+            "columns.add",
+            json!({}),
+            json!({ "layer0": "", "layer1": "", "layer2": "" }),
+        );
+        assert_eq!(empty.message.unwrap().theme, "warning");
+        // One Add can take a column from each layer.
         run(
             "columns.add",
-            json!({ "layer": 1 }),
-            json!({ "field": "assignee" }),
-        );
-        run(
-            "columns.add",
-            json!({ "layer": 1 }),
-            json!({ "field": "comment" }),
-        );
-        run(
-            "columns.move",
-            json!({ "layer": 1, "index": 1, "by": -1 }),
             json!({}),
+            json!({ "layer0": "", "layer1": KEY, "layer2": STORY_POINTS }),
         );
+        run("columns.add", json!({}), json!({ "layer1": STORY_POINTS }));
+        // Adding a column that is already there changes nothing.
+        run("columns.add", json!({}), json!({ "layer1": KEY }));
+        let added = column_ids(&host, List::All);
+        assert_eq!(
+            added[added.len() - 3..],
+            ["1:issuekey", "2:storyPoints", "1:storyPoints"]
+        );
+        // The report Erik wants: Key, Parent key, Parent story points, then the rest.
         run(
-            "columns.remove",
-            json!({ "layer": 0, "index": 0 }),
+            "columns.order",
             json!({}),
+            json!({ "order": ["0:issuekey", "1:issuekey", "1:storyPoints", "0:summary"] }),
         );
-        let layers = columns(&host, List::All).unwrap();
-        assert_eq!(layers[1], vec!["comment", "assignee"]);
-        assert_eq!(layers[0][0], "status");
+        let ordered = column_ids(&host, List::All);
+        assert_eq!(
+            ordered[..4],
+            ["0:issuekey", "1:issuekey", "1:storyPoints", "0:summary"]
+        );
+        assert_eq!(
+            ordered.len(),
+            added.len(),
+            "columns the order left out stay"
+        );
+        assert_eq!(ordered.last().unwrap(), "2:storyPoints");
+        run("columns.move", json!({ "index": 1, "by": 1 }), json!({}));
+        assert_eq!(
+            column_ids(&host, List::All)[1..3],
+            ["1:storyPoints", "1:issuekey"]
+        );
+        run("columns.remove", json!({ "index": 0 }), json!({}));
+        assert_eq!(column_ids(&host, List::All)[0], "1:storyPoints");
+        // Each list keeps its own columns.
         assert_eq!(columns(&host, List::Mine).unwrap(), default_columns());
         run("columns.reset", json!({}), json!({}));
         assert_eq!(columns(&host, List::All).unwrap(), default_columns());
+    }
+
+    #[test]
+    fn columns_saved_per_layer_become_one_list_after_the_key() {
+        let host = connected();
+        host.store.borrow_mut().insert(
+            "columns.issues".into(),
+            json!([["summary", "status"], ["summary"], ["status", "summary"]]),
+        );
+        assert_eq!(
+            column_ids(&host, List::Mine),
+            [
+                "0:issuekey",
+                "0:summary",
+                "0:status",
+                "1:summary",
+                "2:status",
+                "2:summary"
+            ]
+        );
+        host.store
+            .borrow_mut()
+            .insert("columns.issues".into(), json!({ "not": "columns" }));
+        assert_eq!(columns(&host, List::Mine).unwrap(), default_columns());
+    }
+
+    #[test]
+    fn the_editor_drags_columns_where_task_proxy_can_and_uses_arrows_elsewhere() {
+        let host = connected();
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        host.answer("GET", "/rest/api/3/field", 200, sample_fields());
+        let fields = Fields::load(&jira).unwrap();
+        let chosen = vec![ListColumn::new(0, KEY), ListColumn::new(1, STORY_POINTS)];
+        let editor =
+            |host: &FakeHost| serde_json::to_value(columns_editor(host, &fields, &chosen)).unwrap();
+
+        // Task Proxy 0.1.121 and earlier answer no hostInfo, and cannot draw a reorder list.
+        let old = editor(&host);
+        assert!(!old.to_string().contains("\"reorder\""));
+        assert!(old.to_string().contains("Move down"));
+
+        *host.spec.borrow_mut() = Some("0.1.2".into());
+        let new = editor(&host);
+        let list = new
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["type"] == "reorder")
+            .unwrap();
+        assert_eq!(list["items"][0]["id"], "0:issuekey");
+        assert_eq!(list["items"][1]["id"], "1:storyPoints");
+        assert_eq!(
+            list["items"][1]["children"][0]["text"],
+            "Parent story points"
+        );
+        assert_eq!(list["action"]["id"], "columns.order");
+        // One row: Add a column, then a dropdown for each layer, then Add.
+        let row = &new[1];
+        assert_eq!(row["children"][0]["text"], "Add a column");
+        let add = &row["children"][1];
+        assert_eq!(add["inline"], true);
+        let names: Vec<&str> = add["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|field| field["label"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["Issue", "Parent", "Grandparent"]);
+        // A column already chosen is not offered again for its layer, but is for the others.
+        let offered = |layer: usize, id: &str| {
+            add["fields"][layer]["options"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|option| option["value"] == id)
+        };
+        assert!(!offered(0, KEY));
+        assert!(offered(1, KEY));
+        assert!(!offered(1, STORY_POINTS));
+        assert!(offered(2, STORY_POINTS));
+    }
+
+    #[test]
+    fn parent_keys_and_story_points_come_from_the_parent() {
+        let host = connected();
+        host.answer("GET", "/rest/api/3/field", 200, sample_fields());
+        host.store.borrow_mut().insert(
+            "columns.issues".into(),
+            json!([
+                { "layer": 0, "field": KEY },
+                { "layer": 1, "field": KEY },
+                { "layer": 1, "field": STORY_POINTS }
+            ]),
+        );
+        // The child has no points. Its company-managed parent keeps them in "Story Points", not "Story point
+        // estimate", which the site also has.
+        host.answer_when("POST", "/rest/api/3/search/jql", "key in", 200, json!({ "isLast": true, "issues": [
+            { "key": "IR-10", "fields": { "summary": "Story", "customfield_10016": null, "customfield_10026": 8 } }
+        ] }));
+        host.answer(
+            "POST",
+            "/rest/api/3/search/jql",
+            200,
+            json!({ "isLast": true, "issues": [
+            { "key": "IR-11", "fields": { "parent": { "key": "IR-10" } } }
+        ] }),
+        );
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        let node = page(&jira, &fields, List::Mine, &Map::new()).unwrap();
+        let json = serde_json::to_value(&node).unwrap();
+        let table = json["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|child| child["type"] == "table")
+            .unwrap()
+            .clone();
+        assert_eq!(table["columns"][0]["label"], "Key");
+        assert_eq!(table["columns"][1], "Parent key");
+        assert_eq!(table["columns"][2], "Parent story points");
+        let cells = &table["rows"][0]["cells"];
+        assert_eq!(cells[0]["text"], "IR-11");
+        assert_eq!(cells[1]["type"], "link");
+        assert_eq!(cells[1]["text"], "IR-10");
+        assert_eq!(cells[2]["text"], "8");
+        // The parents were asked for both story points fields.
+        let sent = host.sent.borrow();
+        let parents = sent
+            .iter()
+            .find(|sent| sent.body.as_deref().unwrap_or("").contains("key in"))
+            .unwrap();
+        let body: Value = serde_json::from_str(parents.body.as_deref().unwrap()).unwrap();
+        let asked: Vec<&str> = body["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        assert!(asked.contains(&"customfield_10016") && asked.contains(&"customfield_10026"));
     }
 
     #[test]

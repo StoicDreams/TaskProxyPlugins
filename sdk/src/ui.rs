@@ -98,6 +98,17 @@ pub enum Node {
         /// Shown below the buttons. The values of `Inputs` among them are sent with the form.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         children: Vec<Node>,
+        /// Lays the fields and buttons out in one row, wrapping when there is no room. Since spec 0.1.2: older
+        /// hosts stack them.
+        #[serde(default, skip_serializing_if = "is_false")]
+        inline: bool,
+    },
+    /// Items the user puts in order by dragging them, or with Alt+Up and Alt+Down. When the order changes, Task
+    /// Proxy runs `action` with the items' ids in their new order as `order` in the form. Since spec 0.1.2: check
+    /// [`crate::host_supports`] and draw something else for older hosts, which show a placeholder.
+    Reorder {
+        items: Vec<ReorderItem>,
+        action: Action,
     },
     Button {
         action: Action,
@@ -167,6 +178,16 @@ fn is_false(value: &bool) -> bool {
 pub struct Property {
     pub label: String,
     pub value: Node,
+}
+
+/// One item of a [`Node::Reorder`].
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReorderItem {
+    /// Unique in the list, and sent back in `order`.
+    pub id: String,
+    /// What the item shows beside its handle, such as its name and a remove link.
+    pub children: Vec<Node>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -444,6 +465,7 @@ pub fn form(fields: Vec<Field>, submit: Action) -> Node {
         cancel: None,
         buttons: Vec::new(),
         children: Vec::new(),
+        inline: false,
     }
 }
 
@@ -551,6 +573,31 @@ mod tests {
     }
 
     #[test]
+    fn reorder_lists_send_their_items_and_inline_forms_say_so() {
+        let list = Node::Reorder {
+            items: vec![ReorderItem {
+                id: "0:summary".into(),
+                children: vec![text("Summary")],
+            }],
+            action: Action::new("order", "Reorder"),
+        };
+        assert_eq!(
+            serde_json::to_value(&list).unwrap(),
+            json!({ "type": "reorder", "items": [{ "id": "0:summary", "children": [{ "type": "text", "text": "Summary" }] }],
+                "action": { "id": "order", "label": "Reorder" } })
+        );
+        let inline_form = Node::Form {
+            fields: Vec::new(),
+            submit: Action::new("go", "Go"),
+            cancel: None,
+            buttons: Vec::new(),
+            children: Vec::new(),
+            inline: true,
+        };
+        assert_eq!(serde_json::to_value(&inline_form).unwrap()["inline"], true);
+    }
+
+    #[test]
     fn forms_describe_their_fields() {
         let form = Node::Form {
             fields: vec![
@@ -562,6 +609,7 @@ mod tests {
             cancel: None,
             buttons: Vec::new(),
             children: Vec::new(),
+            inline: false,
         };
         assert_eq!(
             serde_json::to_value(&form).unwrap(),

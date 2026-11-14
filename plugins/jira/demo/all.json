@@ -241,227 +241,27 @@
       "children": [
         {
           "muted": true,
-          "text": "Choose the columns for each issue, its parent, and its grandparent. They are saved for you.",
+          "text": "Choose columns from each issue, its parent, and its grandparent, and drag them into order. They are saved for you.",
           "type": "text"
         },
         {
           "children": [
             {
-              "children": [
-                {
-                  "text": "Summary",
-                  "type": "text"
-                },
-                {
-                  "action": {
-                    "id": "columns.move",
-                    "label": "Move right",
-                    "params": {
-                      "by": 1,
-                      "index": 0,
-                      "layer": 0
-                    }
-                  },
-                  "text": "→",
-                  "type": "link"
-                },
-                {
-                  "action": {
-                    "id": "columns.remove",
-                    "label": "Remove",
-                    "params": {
-                      "index": 0,
-                      "layer": 0
-                    }
-                  },
-                  "text": "✕",
-                  "type": "link"
-                }
-              ],
-              "type": "row"
-            },
-            {
-              "children": [
-                {
-                  "text": "Status",
-                  "type": "text"
-                },
-                {
-                  "action": {
-                    "id": "columns.move",
-                    "label": "Move left",
-                    "params": {
-                      "by": -1,
-                      "index": 1,
-                      "layer": 0
-                    }
-                  },
-                  "text": "←",
-                  "type": "link"
-                },
-                {
-                  "action": {
-                    "id": "columns.move",
-                    "label": "Move right",
-                    "params": {
-                      "by": 1,
-                      "index": 1,
-                      "layer": 0
-                    }
-                  },
-                  "text": "→",
-                  "type": "link"
-                },
-                {
-                  "action": {
-                    "id": "columns.remove",
-                    "label": "Remove",
-                    "params": {
-                      "index": 1,
-                      "layer": 0
-                    }
-                  },
-                  "text": "✕",
-                  "type": "link"
-                }
-              ],
-              "type": "row"
-            },
-            {
-              "children": [
-                {
-                  "text": "Assignee",
-                  "type": "text"
-                },
-                {
-                  "action": {
-                    "id": "columns.move",
-                    "label": "Move left",
-                    "params": {
-                      "by": -1,
-                      "index": 2,
-                      "layer": 0
-                    }
-                  },
-                  "text": "←",
-                  "type": "link"
-                },
-                {
-                  "action": {
-                    "id": "columns.move",
-                    "label": "Move right",
-                    "params": {
-                      "by": 1,
-                      "index": 2,
-                      "layer": 0
-                    }
-                  },
-                  "text": "→",
-                  "type": "link"
-                },
-                {
-                  "action": {
-                    "id": "columns.remove",
-                    "label": "Remove",
-                    "params": {
-                      "index": 2,
-                      "layer": 0
-                    }
-                  },
-                  "text": "✕",
-                  "type": "link"
-                }
-              ],
-              "type": "row"
-            },
-            {
-              "children": [
-                {
-                  "text": "Story points",
-                  "type": "text"
-                },
-                {
-                  "action": {
-                    "id": "columns.move",
-                    "label": "Move left",
-                    "params": {
-                      "by": -1,
-                      "index": 3,
-                      "layer": 0
-                    }
-                  },
-                  "text": "←",
-                  "type": "link"
-                },
-                {
-                  "action": {
-                    "id": "columns.move",
-                    "label": "Move right",
-                    "params": {
-                      "by": 1,
-                      "index": 3,
-                      "layer": 0
-                    }
-                  },
-                  "text": "→",
-                  "type": "link"
-                },
-                {
-                  "action": {
-                    "id": "columns.remove",
-                    "label": "Remove",
-                    "params": {
-                      "index": 3,
-                      "layer": 0
-                    }
-                  },
-                  "text": "✕",
-                  "type": "link"
-                }
-              ],
-              "type": "row"
-            },
-            {
-              "children": [
-                {
-                  "text": "Comment",
-                  "type": "text"
-                },
-                {
-                  "action": {
-                    "id": "columns.move",
-                    "label": "Move left",
-                    "params": {
-                      "by": -1,
-                      "index": 4,
-                      "layer": 0
-                    }
-                  },
-                  "text": "←",
-                  "type": "link"
-                },
-                {
-                  "action": {
-                    "id": "columns.remove",
-                    "label": "Remove",
-                    "params": {
-                      "index": 4,
-                      "layer": 0
-                    }
-                  },
-                  "text": "✕",
-                  "type": "link"
-                }
-              ],
-              "type": "row"
+              "strong": true,
+              "text": "Add a column",
+              "type": "text"
             },
             {
               "fields": [
                 {
                   "kind": "select",
-                  "label": "Add a column",
-                  "name": "field",
+                  "label": "Issue",
+                  "name": "layer0",
                   "options": [
+                    {
+                      "label": "Choose…",
+                      "value": ""
+                    },
                     {
                       "label": "Issue Type",
                       "value": "issuetype"
@@ -507,54 +307,17 @@
                       "value": "customfield_10050"
                     }
                   ],
-                  "value": null
-                }
-              ],
-              "submit": {
-                "id": "columns.add",
-                "label": "Add",
-                "params": {
-                  "layer": 0
-                }
-              },
-              "type": "form"
-            }
-          ],
-          "key": "columns-0",
-          "open": true,
-          "title": "Issue",
-          "type": "section"
-        },
-        {
-          "children": [
-            {
-              "children": [
-                {
-                  "text": "Summary",
-                  "type": "text"
+                  "value": ""
                 },
                 {
-                  "action": {
-                    "id": "columns.remove",
-                    "label": "Remove",
-                    "params": {
-                      "index": 0,
-                      "layer": 1
-                    }
-                  },
-                  "text": "✕",
-                  "type": "link"
-                }
-              ],
-              "type": "row"
-            },
-            {
-              "fields": [
-                {
                   "kind": "select",
-                  "label": "Add a column",
-                  "name": "field",
+                  "label": "Parent",
+                  "name": "layer1",
                   "options": [
+                    {
+                      "label": "Choose…",
+                      "value": ""
+                    },
                     {
                       "label": "Status",
                       "value": "status"
@@ -616,38 +379,21 @@
                       "value": "customfield_10050"
                     }
                   ],
-                  "value": null
-                }
-              ],
-              "submit": {
-                "id": "columns.add",
-                "label": "Add",
-                "params": {
-                  "layer": 1
-                }
-              },
-              "type": "form"
-            }
-          ],
-          "key": "columns-1",
-          "open": false,
-          "title": "Parent",
-          "type": "section"
-        },
-        {
-          "children": [
-            {
-              "muted": true,
-              "text": "No columns.",
-              "type": "text"
-            },
-            {
-              "fields": [
+                  "value": ""
+                },
                 {
                   "kind": "select",
-                  "label": "Add a column",
-                  "name": "field",
+                  "label": "Grandparent",
+                  "name": "layer2",
                   "options": [
+                    {
+                      "label": "Choose…",
+                      "value": ""
+                    },
+                    {
+                      "label": "Key",
+                      "value": "issuekey"
+                    },
                     {
                       "label": "Summary",
                       "value": "summary"
@@ -713,23 +459,188 @@
                       "value": "customfield_10050"
                     }
                   ],
-                  "value": null
+                  "value": ""
                 }
               ],
+              "inline": true,
               "submit": {
+                "icon": "plus",
                 "id": "columns.add",
-                "label": "Add",
-                "params": {
-                  "layer": 2
-                }
+                "label": "Add"
               },
               "type": "form"
             }
           ],
-          "key": "columns-2",
-          "open": false,
-          "title": "Grandparent",
-          "type": "section"
+          "type": "row"
+        },
+        {
+          "action": {
+            "id": "columns.order",
+            "label": "Reorder the columns"
+          },
+          "items": [
+            {
+              "children": [
+                {
+                  "text": "Key",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "columns.remove",
+                    "label": "Remove Key",
+                    "params": {
+                      "index": 0
+                    }
+                  },
+                  "text": "✕",
+                  "type": "link"
+                }
+              ],
+              "id": "0:issuekey"
+            },
+            {
+              "children": [
+                {
+                  "text": "Parent key",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "columns.remove",
+                    "label": "Remove Parent key",
+                    "params": {
+                      "index": 1
+                    }
+                  },
+                  "text": "✕",
+                  "type": "link"
+                }
+              ],
+              "id": "1:issuekey"
+            },
+            {
+              "children": [
+                {
+                  "text": "Summary",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "columns.remove",
+                    "label": "Remove Summary",
+                    "params": {
+                      "index": 2
+                    }
+                  },
+                  "text": "✕",
+                  "type": "link"
+                }
+              ],
+              "id": "0:summary"
+            },
+            {
+              "children": [
+                {
+                  "text": "Status",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "columns.remove",
+                    "label": "Remove Status",
+                    "params": {
+                      "index": 3
+                    }
+                  },
+                  "text": "✕",
+                  "type": "link"
+                }
+              ],
+              "id": "0:status"
+            },
+            {
+              "children": [
+                {
+                  "text": "Assignee",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "columns.remove",
+                    "label": "Remove Assignee",
+                    "params": {
+                      "index": 4
+                    }
+                  },
+                  "text": "✕",
+                  "type": "link"
+                }
+              ],
+              "id": "0:assignee"
+            },
+            {
+              "children": [
+                {
+                  "text": "Story points",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "columns.remove",
+                    "label": "Remove Story points",
+                    "params": {
+                      "index": 5
+                    }
+                  },
+                  "text": "✕",
+                  "type": "link"
+                }
+              ],
+              "id": "0:storyPoints"
+            },
+            {
+              "children": [
+                {
+                  "text": "Comment",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "columns.remove",
+                    "label": "Remove Comment",
+                    "params": {
+                      "index": 6
+                    }
+                  },
+                  "text": "✕",
+                  "type": "link"
+                }
+              ],
+              "id": "0:comment"
+            },
+            {
+              "children": [
+                {
+                  "text": "Parent summary",
+                  "type": "text"
+                },
+                {
+                  "action": {
+                    "id": "columns.remove",
+                    "label": "Remove Parent summary",
+                    "params": {
+                      "index": 7
+                    }
+                  },
+                  "text": "✕",
+                  "type": "link"
+                }
+              ],
+              "id": "1:summary"
+            }
+          ],
+          "type": "reorder"
         },
         {
           "children": [
@@ -767,7 +678,17 @@
     },
     {
       "columns": [
-        "Key",
+        {
+          "action": {
+            "id": "list.sort",
+            "label": "Sort by Key",
+            "params": {
+              "field": "issuekey"
+            }
+          },
+          "label": "Key"
+        },
+        "Parent key",
         {
           "action": {
             "id": "list.sort",
@@ -823,6 +744,17 @@
                 }
               },
               "text": "ATL-142",
+              "type": "link"
+            },
+            {
+              "action": {
+                "id": "open",
+                "label": "Open ATL-120",
+                "params": {
+                  "key": "ATL-120"
+                }
+              },
+              "text": "ATL-120",
               "type": "link"
             },
             {
@@ -917,7 +849,7 @@
             {
               "action": {
                 "id": "cell.open",
-                "label": "Show Summary",
+                "label": "Show Parent summary",
                 "params": {
                   "field": "summary",
                   "key": "ATL-120"
@@ -941,6 +873,17 @@
                 }
               },
               "text": "ATL-139",
+              "type": "link"
+            },
+            {
+              "action": {
+                "id": "open",
+                "label": "Open ATL-120",
+                "params": {
+                  "key": "ATL-120"
+                }
+              },
+              "text": "ATL-120",
               "type": "link"
             },
             {
@@ -1035,7 +978,7 @@
             {
               "action": {
                 "id": "cell.open",
-                "label": "Show Summary",
+                "label": "Show Parent summary",
                 "params": {
                   "field": "summary",
                   "key": "ATL-120"
@@ -1059,6 +1002,17 @@
                 }
               },
               "text": "ATL-151",
+              "type": "link"
+            },
+            {
+              "action": {
+                "id": "open",
+                "label": "Open ATL-125",
+                "params": {
+                  "key": "ATL-125"
+                }
+              },
+              "text": "ATL-125",
               "type": "link"
             },
             {
@@ -1153,7 +1107,7 @@
             {
               "action": {
                 "id": "cell.open",
-                "label": "Show Summary",
+                "label": "Show Parent summary",
                 "params": {
                   "field": "summary",
                   "key": "ATL-125"
@@ -1177,6 +1131,17 @@
                 }
               },
               "text": "ATL-156",
+              "type": "link"
+            },
+            {
+              "action": {
+                "id": "open",
+                "label": "Open ATL-125",
+                "params": {
+                  "key": "ATL-125"
+                }
+              },
+              "text": "ATL-125",
               "type": "link"
             },
             {
@@ -1271,7 +1236,7 @@
             {
               "action": {
                 "id": "cell.open",
-                "label": "Show Summary",
+                "label": "Show Parent summary",
                 "params": {
                   "field": "summary",
                   "key": "ATL-125"
@@ -1295,6 +1260,17 @@
                 }
               },
               "text": "ATL-133",
+              "type": "link"
+            },
+            {
+              "action": {
+                "id": "open",
+                "label": "Open ATL-120",
+                "params": {
+                  "key": "ATL-120"
+                }
+              },
+              "text": "ATL-120",
               "type": "link"
             },
             {
@@ -1389,7 +1365,7 @@
             {
               "action": {
                 "id": "cell.open",
-                "label": "Show Summary",
+                "label": "Show Parent summary",
                 "params": {
                   "field": "summary",
                   "key": "ATL-120"

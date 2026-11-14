@@ -99,7 +99,7 @@ pub fn resolve(id: &str, fields: &Fields) -> Option<String> {
 
 /// The site's field id as a View saves it.
 pub fn portable(id: &str, fields: &Fields) -> String {
-    if fields.story_points().as_deref() == Some(id) {
+    if fields.is_story_points(id) {
         STORY_POINTS.into()
     } else if fields.sprint().as_deref() == Some(id) {
         SPRINT.into()
@@ -186,7 +186,12 @@ pub fn layers(jira: &Jira, fields: &Fields, view: &View, key: &str) -> Result<(V
         let Some(current) = next.take() else {
             break;
         };
-        let mut wanted: Vec<String> = layer.iter().filter_map(|id| resolve(id, fields)).collect();
+        let mut wanted: Vec<String> = fields.wanted(
+            &layer
+                .iter()
+                .filter_map(|id| resolve(id, fields))
+                .collect::<Vec<_>>(),
+        );
         for always in ["summary", "issuetype", "parent", "status"] {
             if !wanted.iter().any(|id| id == always) {
                 wanted.push(always.to_string());
@@ -219,7 +224,7 @@ pub fn layers(jira: &Jira, fields: &Fields, view: &View, key: &str) -> Result<(V
                 let real = resolve(id, fields)?;
                 Some(ui::property(
                     field_label(id, fields),
-                    fields::value_node(&real, issue_fields.get(&real).unwrap_or(&Value::Null)),
+                    fields::value_node(&real, &fields.value_of(&issue, &real)),
                 ))
             })
             .collect();
@@ -409,6 +414,7 @@ fn editor(host: &dyn Host, fields: &Fields, draft: &Draft) -> Node {
             cancel: None,
             buttons: Vec::new(),
             children: Vec::new(),
+            inline: false,
         });
         if depth > 0 {
             items.push(ui::link(
@@ -460,6 +466,7 @@ fn editor(host: &dyn Host, fields: &Fields, draft: &Draft) -> Node {
         cancel: Some(Action::new("draft.cancel", "Cancel")),
         buttons: Vec::new(),
         children: Vec::new(),
+        inline: false,
     });
     ui::stack(children)
 }
@@ -691,7 +698,7 @@ mod tests {
         host.answer("GET", "/rest/api/3/field", 200, sample_fields());
         host.answer(
             "GET",
-            "/rest/api/3/issue/P-3?fields=status,customfield_10016,summary,issuetype,parent",
+            "/rest/api/3/issue/P-3?fields=status,customfield_10016,customfield_10026,summary,issuetype,parent",
             200,
             json!({ "key": "P-3", "fields": {
                 "summary": "Fix login", "issuetype": { "name": "Task" },

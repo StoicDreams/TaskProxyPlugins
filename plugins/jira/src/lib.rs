@@ -133,6 +133,8 @@ pub mod testing {
         pub files: RefCell<HashMap<String, String>>,
         pub project_open: Cell<bool>,
         pub now: Cell<u64>,
+        /// The spec version `host_info` reports. `None` answers with an error, as Task Proxy 0.1.121 does.
+        pub spec: RefCell<Option<String>>,
     }
 
     impl FakeHost {
@@ -209,6 +211,18 @@ pub mod testing {
         fn now_ms(&self) -> Result<u64> {
             Ok(self.now.get())
         }
+        fn host_info(&self) -> Result<taskproxy_plugin_sdk::HostInfo> {
+            let spec = self
+                .spec
+                .borrow()
+                .clone()
+                .ok_or_else(|| Error::new("Task Proxy did not understand the request."))?;
+            Ok(taskproxy_plugin_sdk::HostInfo {
+                app: "0.1.122".into(),
+                spec,
+                platform: "linux".into(),
+            })
+        }
         fn http(&self, request: &HttpRequest) -> Result<HttpResponse> {
             self.sent.borrow_mut().push(request.clone());
             let path = request
@@ -251,6 +265,8 @@ pub mod testing {
             { "id": "assignee", "name": "Assignee", "custom": false, "schema": { "type": "user" } },
             { "id": "attachment", "name": "Attachment", "custom": false },
             { "id": "customfield_10016", "name": "Story point estimate", "custom": true, "schema": { "type": "number" } },
+            { "id": "customfield_10026", "name": "Story Points", "custom": true, "schema": { "type": "number" } },
+            { "id": "issuekey", "name": "Key", "custom": false },
             { "id": "customfield_10020", "name": "Sprint", "custom": true, "schema": { "type": "array" } },
             { "id": "customfield_10050", "name": "Acceptance criteria", "custom": true, "schema": { "type": "string" } },
             { "id": "customfield_10040", "name": "Team", "custom": true, "schema": { "type": "team" } }
@@ -324,6 +340,8 @@ pub(crate) mod tests {
     #[test]
     fn the_manifest_matches_the_plugin() {
         let manifest: Value = serde_json::from_str(include_str!("../plugin.json")).unwrap();
+        // Jira uses nothing newer than spec 0.1.0, and keeps apiVersion for Task Proxy 0.1.121 and earlier.
+        assert_eq!(manifest["spec"], json!(["0.1.0"]));
         assert_eq!(manifest["apiVersion"], API_VERSION);
         assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"));
         let declared: Vec<&str> = manifest["permissions"]["variables"]
