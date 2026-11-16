@@ -73,6 +73,7 @@ impl ActionResult {
             navigate: Some(Navigate {
                 page: page.into(),
                 params,
+                side: false,
             }),
             ..Default::default()
         }
@@ -114,6 +115,15 @@ impl ActionResult {
         self
     }
 
+    /// Opens the page navigated to beside the current one, in a split the user resizes. Since spec 0.1.4: older
+    /// hosts open it in place of the current page.
+    pub fn beside(mut self) -> Self {
+        if let Some(navigate) = self.navigate.as_mut() {
+            navigate.side = true;
+        }
+        self
+    }
+
     pub fn with_message(mut self, text: impl Into<String>, theme: &str) -> Self {
         self.message = Some(Message {
             text: text.into(),
@@ -136,6 +146,9 @@ pub struct Navigate {
     pub page: String,
     #[serde(default)]
     pub params: Map<String, Value>,
+    /// Opens the page beside the current one. Since spec 0.1.4.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub side: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]

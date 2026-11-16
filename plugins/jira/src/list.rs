@@ -45,6 +45,7 @@ const UNSORTABLE: [&str; 6] = [
 const FILTERS_PANEL: &str = "list-filters";
 const JQL_PANEL: &str = "list-jql";
 const COLUMNS_PANEL: &str = "list-columns";
+const SAVE_PANEL: &str = "list-save";
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum List {
@@ -489,6 +490,7 @@ pub(crate) fn cell(fields: &Fields, real: &str, label: &str, issue: Option<&Valu
                 Action::new("cell.comments", format!("Comments on {}", key)).param("key", key),
             ),
             always: true,
+            theme: String::new(),
         };
     }
     if is_choice(real, fields) {
@@ -515,6 +517,11 @@ pub(crate) fn cell(fields: &Fields, real: &str, label: &str, issue: Option<&Valu
     let text = one_line(&fields::value_text(value));
     Node::Clip {
         muted: matches!(real, "updated" | "created"),
+        theme: if real == "issuetype" {
+            fields::issue_type_theme(&text).to_string()
+        } else {
+            String::new()
+        },
         text,
         max: 30,
         tip: 100,
@@ -775,7 +782,8 @@ pub fn page(
     };
     let uses = |depth: usize| resolved.iter().any(|(column, _)| column.layer == depth);
     let mut first = wanted(0);
-    for always in ["parent", "resolution", "status"] {
+    // The issue type tints bug rows, even when no column shows it.
+    for always in ["parent", "resolution", "status", "issuetype"] {
         if !first.iter().any(|id| id == always) {
             first.push(always.into());
         }
@@ -885,6 +893,7 @@ pub fn page(
             let grandparent = parent
                 .as_ref()
                 .and_then(|parent| by_key(&grandparents, parent_key(parent)));
+            let theme = fields::row_theme(issue, parent.as_ref());
             let at_depth = [Some(issue.clone()), parent, grandparent];
             let cells = resolved
                 .iter()
@@ -900,6 +909,7 @@ pub fn page(
             TableRow {
                 cells,
                 action: None,
+                theme,
             }
         })
         .collect();
@@ -918,6 +928,9 @@ pub fn page(
                 .value(json!(values)),
         );
     }
+    let split = crate::pages::split_view(host)?;
+    // Every button sits in one row above the table, and what they open shows below it, so the issues start high on
+    // the page.
     let mut children = vec![Node::Form {
         fields: Vec::new(),
         buttons: vec![
@@ -930,8 +943,25 @@ pub fn page(
                 FILTERS_PANEL,
             ),
             ui::toggle("JQL", JQL_PANEL),
+            ui::toggle("Columns", COLUMNS_PANEL),
+            ui::toggle("Save search", SAVE_PANEL),
+            // Whether an issue opens beside the list, or in its place.
+            ui::button(
+                Action::new(
+                    "list.split",
+                    if split {
+                        "Split view: On"
+                    } else {
+                        "Split view: Off"
+                    },
+                )
+                .icon("table-columns"),
+                if split { "primary" } else { "secondary" },
+            ),
         ],
-        submit: Action::new("list.search", "Search").icon("magnifying-glass"),
+        // Refresh runs the search again as it is, and the button becomes Search once the user changes it. Both
+        // search with the form's values, so a host that always shows Refresh still searches for what was typed.
+        submit: Action::new("list.search", "Refresh").icon("refresh"),
         cancel: None,
         children: vec![
             ui::panel(
@@ -954,17 +984,39 @@ pub fn page(
             ),
         ],
         inline: false,
+        changed: Some(Action::new("list.search", "Search").icon("magnifying-glass")),
     }];
+    children.push(ui::panel(
+        COLUMNS_PANEL,
+        false,
+        columns_editor(host, fields, &chosen_columns),
+    ));
+    children.push(ui::panel(
+        SAVE_PANEL,
+        false,
+        vec![Node::Form {
+            fields: vec![
+                Field::new(FieldKind::Text, "name", "Save this search as")
+                    .placeholder("Sprint bugs"),
+            ],
+            submit: Action::new("list.save", "Save search"),
+            cancel: None,
+            buttons: Vec::new(),
+            children: Vec::new(),
+            inline: true,
+            changed: None,
+        }],
+    ));
 
-    let mut saved_links = vec![ui::toggle("Columns", COLUMNS_PANEL)];
-    saved_links.push(ui::link(
+    // The saved searches, and how many finished subtasks were kept, share one line.
+    let mut saved_links = vec![ui::link(
         if list == List::Mine {
             "My open issues"
         } else {
             "All open issues"
         },
         Action::new("list.reset", "Clear the search"),
-    ));
+    )];
     for (index, search) in saved(host, list)?.iter().enumerate() {
         saved_links.push(ui::link(
             search.name.clone(),
@@ -977,18 +1029,8 @@ pub fn page(
                 .confirm(format!("Delete the saved search '{}'?", search.name)),
         ));
     }
-    children.push(ui::row(saved_links));
-    children.push(ui::panel(
-        COLUMNS_PANEL,
-        false,
-        columns_editor(host, fields, &chosen_columns),
-    ));
-    children.push(ui::form(
-        vec![Field::new(FieldKind::Text, "name", "Save this search as").placeholder("Sprint bugs")],
-        Action::new("list.save", "Save search"),
-    ));
     if waiting > 0 {
-        children.push(ui::muted(format!(
+        saved_links.push(ui::muted(format!(
             "{} finished {} {} here until {} parent is finished.",
             waiting,
             if waiting == 1 { "subtask" } else { "subtasks" },
@@ -996,6 +1038,7 @@ pub fn page(
             if waiting == 1 { "its" } else { "their" },
         )));
     }
+    children.push(ui::row(saved_links));
     if rows.is_empty() {
         children.push(ui::empty("No issues match this search."));
     } else {
@@ -1076,6 +1119,7 @@ fn columns_editor(host: &dyn Host, fields: &Fields, chosen: &[ListColumn]) -> Ve
             buttons: Vec::new(),
             children: Vec::new(),
             inline: true,
+            changed: None,
         },
     ]));
     if chosen.is_empty() {
@@ -1400,6 +1444,7 @@ pub fn text_editor(fields: &Fields, key: &str, real: &str, value: &Value) -> Nod
         buttons: Vec::new(),
         children: Vec::new(),
         inline: real == "summary",
+        changed: None,
     }
 }
 
@@ -1438,6 +1483,10 @@ pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResul
     let key = param(p, "key");
     let real = param(p, "field");
     let result = match request.action.as_str() {
+        "list.split" => {
+            crate::pages::set_split_view(host, !crate::pages::split_view(host)?)?;
+            ActionResult::refresh()
+        }
         "list.search" => {
             let mut params = search_params(&request.page_params);
             let jql = form_text(request, "jql");
@@ -1819,6 +1868,117 @@ mod tests {
         // The fake answers every search alike, so its parents are asked for too.
         assert!(searches[2].contains("key in (\\\"P-2\\\""));
         assert!(searches[3].contains("\\\"P-1\\\""));
+    }
+
+    #[test]
+    fn issues_open_beside_the_list_until_split_view_is_turned_off() {
+        let host = connected();
+        host.answer(
+            "POST",
+            "/rest/api/3/search/jql",
+            200,
+            json!({ "isLast": true, "issues": [] }),
+        );
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let open = |page: &str| {
+            crate::pages::action(
+                &jira,
+                &request(page, "open", json!({ "key": "P-1" }), json!({}), json!({})),
+            )
+            .unwrap()
+            .unwrap()
+            .navigate
+            .unwrap()
+        };
+        let beside = open("issues");
+        assert_eq!(beside.page, "issue");
+        assert_eq!(beside.params["key"], "P-1");
+        assert!(beside.side, "split view is on until turned off");
+        assert!(open("all").side);
+        // From the issue page itself, a linked issue opens in its place.
+        assert!(!open("issue").side);
+        let toggle = |label: &str| {
+            let node = page(
+                &jira,
+                &Fields::load(&jira).unwrap(),
+                List::Mine,
+                &page_params(json!({})),
+            )
+            .unwrap();
+            serde_json::to_string(&node).unwrap().contains(label)
+        };
+        assert!(toggle("Split view: On"));
+        let turned = action(
+            &jira,
+            &request("issues", "list.split", json!({}), json!({}), json!({})),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(turned.refresh);
+        assert!(!open("issues").side);
+        assert!(toggle("Split view: Off"));
+        // Older hosts read no side, and the field is left out when it is off.
+        let json = serde_json::to_value(open("issues")).unwrap();
+        assert!(json.get("side").is_none());
+    }
+
+    #[test]
+    fn issue_types_are_colored_and_bug_rows_are_tinted() {
+        let host = connected();
+        host.store
+            .borrow_mut()
+            .insert("columns.issues".into(), json!([["issuetype"]]));
+        let issue = |key: &str, kind: &str, parent: Value| {
+            json!({ "key": key, "fields": {
+                "issuetype": { "name": kind },
+                "status": { "name": "To Do", "statusCategory": { "key": "new" } },
+                "parent": parent
+            } })
+        };
+        host.answer("POST", "/rest/api/3/search/jql", 200, json!({ "isLast": true, "issues": [
+            issue("P-1", "Bug", Value::Null),
+            issue("P-2", "Subtask", json!({ "key": "P-9", "fields": { "issuetype": { "name": "Bug" } } })),
+            issue("P-3", "Story", Value::Null),
+            issue("P-4", "Mystery", json!({ "key": "P-8", "fields": { "issuetype": { "name": "Story" } } }))
+        ] }));
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        let node = page(&jira, &fields, List::Mine, &page_params(json!({}))).unwrap();
+        let json = serde_json::to_value(&node).unwrap();
+        let table = json["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|child| child["type"] == "table")
+            .unwrap()
+            .clone();
+        let rows = table["rows"].as_array().unwrap();
+        let type_theme = |row: &Value| row["cells"][1]["theme"].clone();
+        assert_eq!(type_theme(&rows[0]), "danger");
+        assert_eq!(type_theme(&rows[1]), "info");
+        assert_eq!(type_theme(&rows[2]), "success");
+        assert!(
+            rows[3]["cells"][1].get("theme").is_none(),
+            "an unknown type has no theme"
+        );
+        // A bug, or an issue whose parent is a bug, tints its row.
+        assert_eq!(rows[0]["theme"], "danger");
+        assert_eq!(rows[1]["theme"], "danger");
+        assert!(rows[2].get("theme").is_none());
+        assert!(rows[3].get("theme").is_none());
+        // The type is fetched for the tint even when no column shows it.
+        host.store
+            .borrow_mut()
+            .insert("columns.issues".into(), json!([["summary"]]));
+        host.sent.borrow_mut().clear();
+        page(&jira, &fields, List::Mine, &page_params(json!({}))).unwrap();
+        let sent = host.sent.borrow();
+        let search = sent
+            .iter()
+            .find(|sent| sent.url.ends_with("search/jql"))
+            .and_then(|sent| sent.body.clone())
+            .unwrap();
+        assert!(search.contains("\"issuetype\""));
     }
 
     #[test]

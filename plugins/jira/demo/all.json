@@ -25,8 +25,46 @@
           },
           "theme": "secondary",
           "type": "button"
+        },
+        {
+          "action": {
+            "host": {
+              "key": "list-columns",
+              "type": "toggle"
+            },
+            "id": "",
+            "label": "Columns"
+          },
+          "theme": "secondary",
+          "type": "button"
+        },
+        {
+          "action": {
+            "host": {
+              "key": "list-save",
+              "type": "toggle"
+            },
+            "id": "",
+            "label": "Save search"
+          },
+          "theme": "secondary",
+          "type": "button"
+        },
+        {
+          "action": {
+            "icon": "table-columns",
+            "id": "list.split",
+            "label": "Split view: On"
+          },
+          "theme": "primary",
+          "type": "button"
         }
       ],
+      "changed": {
+        "icon": "magnifying-glass",
+        "id": "list.search",
+        "label": "Search"
+      },
       "children": [
         {
           "children": [
@@ -206,36 +244,11 @@
       ],
       "fields": [],
       "submit": {
-        "icon": "magnifying-glass",
+        "icon": "refresh",
         "id": "list.search",
-        "label": "Search"
+        "label": "Refresh"
       },
       "type": "form"
-    },
-    {
-      "children": [
-        {
-          "action": {
-            "host": {
-              "key": "list-columns",
-              "type": "toggle"
-            },
-            "id": "",
-            "label": "Columns"
-          },
-          "theme": "secondary",
-          "type": "button"
-        },
-        {
-          "action": {
-            "id": "list.reset",
-            "label": "Clear the search"
-          },
-          "text": "All open issues",
-          "type": "link"
-        }
-      ],
-      "type": "row"
     },
     {
       "children": [
@@ -661,20 +674,41 @@
       "type": "panel"
     },
     {
-      "fields": [
+      "children": [
         {
-          "kind": "text",
-          "label": "Save this search as",
-          "name": "name",
-          "placeholder": "Sprint bugs",
-          "value": null
+          "fields": [
+            {
+              "kind": "text",
+              "label": "Save this search as",
+              "name": "name",
+              "placeholder": "Sprint bugs",
+              "value": null
+            }
+          ],
+          "inline": true,
+          "submit": {
+            "id": "list.save",
+            "label": "Save search"
+          },
+          "type": "form"
         }
       ],
-      "submit": {
-        "id": "list.save",
-        "label": "Save search"
-      },
-      "type": "form"
+      "key": "list-save",
+      "open": false,
+      "type": "panel"
+    },
+    {
+      "children": [
+        {
+          "action": {
+            "id": "list.reset",
+            "label": "Clear the search"
+          },
+          "text": "All open issues",
+          "type": "link"
+        }
+      ],
+      "type": "row"
     },
     {
       "columns": [

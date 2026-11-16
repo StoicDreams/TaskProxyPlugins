@@ -230,6 +230,39 @@ pub fn short_date(text: &str) -> String {
     }
 }
 
+/// The theme for an issue type's name, so each kind of issue reads at a glance. Bugs are `danger`.
+pub fn issue_type_theme(name: &str) -> &'static str {
+    match name.trim().to_lowercase().as_str() {
+        "bug" | "defect" | "incident" => "danger",
+        "story" | "user story" => "success",
+        "task" | "sub-task" | "subtask" => "info",
+        "epic" | "initiative" => "tertiary",
+        "feature" | "improvement" | "new feature" => "primary",
+        "spike" | "research" => "warning",
+        _ => "",
+    }
+}
+
+/// Whether an issue is a bug, by its type.
+pub fn is_bug(issue: &Value) -> bool {
+    issue
+        .pointer("/fields/issuetype/name")
+        .and_then(Value::as_str)
+        .is_some_and(|name| issue_type_theme(name) == "danger")
+}
+
+/// A table row's theme: `danger` when its issue or its parent is a bug. Jira's `parent` field carries the parent's
+/// type, so a parent that was not fetched still counts.
+pub fn row_theme(issue: &Value, parent: Option<&Value>) -> String {
+    let parent_is_bug =
+        parent.is_some_and(is_bug) || issue.pointer("/fields/parent").is_some_and(is_bug);
+    if is_bug(issue) || parent_is_bug {
+        "danger".into()
+    } else {
+        String::new()
+    }
+}
+
 /// The theme for a status, by its category: to do, in progress, or done.
 pub fn status_theme(status: &Value) -> &'static str {
     match status

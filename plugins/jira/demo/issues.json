@@ -25,8 +25,46 @@
           },
           "theme": "secondary",
           "type": "button"
+        },
+        {
+          "action": {
+            "host": {
+              "key": "list-columns",
+              "type": "toggle"
+            },
+            "id": "",
+            "label": "Columns"
+          },
+          "theme": "secondary",
+          "type": "button"
+        },
+        {
+          "action": {
+            "host": {
+              "key": "list-save",
+              "type": "toggle"
+            },
+            "id": "",
+            "label": "Save search"
+          },
+          "theme": "secondary",
+          "type": "button"
+        },
+        {
+          "action": {
+            "icon": "table-columns",
+            "id": "list.split",
+            "label": "Split view: On"
+          },
+          "theme": "primary",
+          "type": "button"
         }
       ],
+      "changed": {
+        "icon": "magnifying-glass",
+        "id": "list.search",
+        "label": "Search"
+      },
       "children": [
         {
           "children": [
@@ -178,82 +216,11 @@
       ],
       "fields": [],
       "submit": {
-        "icon": "magnifying-glass",
+        "icon": "refresh",
         "id": "list.search",
-        "label": "Search"
+        "label": "Refresh"
       },
       "type": "form"
-    },
-    {
-      "children": [
-        {
-          "action": {
-            "host": {
-              "key": "list-columns",
-              "type": "toggle"
-            },
-            "id": "",
-            "label": "Columns"
-          },
-          "theme": "secondary",
-          "type": "button"
-        },
-        {
-          "action": {
-            "id": "list.reset",
-            "label": "Clear the search"
-          },
-          "text": "My open issues",
-          "type": "link"
-        },
-        {
-          "action": {
-            "id": "list.apply",
-            "label": "Sprint 14",
-            "params": {
-              "index": 0
-            }
-          },
-          "text": "Sprint 14",
-          "type": "link"
-        },
-        {
-          "action": {
-            "confirm": "Delete the saved search 'Sprint 14'?",
-            "id": "list.delete",
-            "label": "Delete Sprint 14",
-            "params": {
-              "index": 0
-            }
-          },
-          "text": "✕",
-          "type": "link"
-        },
-        {
-          "action": {
-            "id": "list.apply",
-            "label": "Bugs I reported",
-            "params": {
-              "index": 1
-            }
-          },
-          "text": "Bugs I reported",
-          "type": "link"
-        },
-        {
-          "action": {
-            "confirm": "Delete the saved search 'Bugs I reported'?",
-            "id": "list.delete",
-            "label": "Delete Bugs I reported",
-            "params": {
-              "index": 1
-            }
-          },
-          "text": "✕",
-          "type": "link"
-        }
-      ],
-      "type": "row"
     },
     {
       "children": [
@@ -679,25 +646,92 @@
       "type": "panel"
     },
     {
-      "fields": [
+      "children": [
         {
-          "kind": "text",
-          "label": "Save this search as",
-          "name": "name",
-          "placeholder": "Sprint bugs",
-          "value": null
+          "fields": [
+            {
+              "kind": "text",
+              "label": "Save this search as",
+              "name": "name",
+              "placeholder": "Sprint bugs",
+              "value": null
+            }
+          ],
+          "inline": true,
+          "submit": {
+            "id": "list.save",
+            "label": "Save search"
+          },
+          "type": "form"
         }
       ],
-      "submit": {
-        "id": "list.save",
-        "label": "Save search"
-      },
-      "type": "form"
+      "key": "list-save",
+      "open": false,
+      "type": "panel"
     },
     {
-      "muted": true,
-      "text": "1 finished subtask stays here until its parent is finished.",
-      "type": "text"
+      "children": [
+        {
+          "action": {
+            "id": "list.reset",
+            "label": "Clear the search"
+          },
+          "text": "My open issues",
+          "type": "link"
+        },
+        {
+          "action": {
+            "id": "list.apply",
+            "label": "Sprint 14",
+            "params": {
+              "index": 0
+            }
+          },
+          "text": "Sprint 14",
+          "type": "link"
+        },
+        {
+          "action": {
+            "confirm": "Delete the saved search 'Sprint 14'?",
+            "id": "list.delete",
+            "label": "Delete Sprint 14",
+            "params": {
+              "index": 0
+            }
+          },
+          "text": "✕",
+          "type": "link"
+        },
+        {
+          "action": {
+            "id": "list.apply",
+            "label": "Bugs I reported",
+            "params": {
+              "index": 1
+            }
+          },
+          "text": "Bugs I reported",
+          "type": "link"
+        },
+        {
+          "action": {
+            "confirm": "Delete the saved search 'Bugs I reported'?",
+            "id": "list.delete",
+            "label": "Delete Bugs I reported",
+            "params": {
+              "index": 1
+            }
+          },
+          "text": "✕",
+          "type": "link"
+        },
+        {
+          "muted": true,
+          "text": "1 finished subtask stays here until its parent is finished.",
+          "type": "text"
+        }
+      ],
+      "type": "row"
     },
     {
       "columns": [

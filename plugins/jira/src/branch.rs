@@ -329,6 +329,7 @@ pub fn page(jira: &Jira, page_params: &Map<String, Value>) -> Result<Node> {
             buttons: Vec::new(),
             children: Vec::new(),
             inline: true,
+            changed: None,
         },
         ui::section("branch-preview", "Preview", true, preview),
         ui::section(

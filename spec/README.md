@@ -64,7 +64,7 @@ Those releases also do not check `spec`, so they run a plugin that lists `0.1.1`
 | 0.1.1 | Released | The `hostInfo` host call. The manifest's `spec` list, and the catalog's `spec` and `versions`. |
 | 0.1.2 | Released | The `reorder` node, for items the user drags into order, and forms' `inline`, for fields and buttons in one row. |
 | 0.1.3 | Released | Images in markdown, from data URIs, and HTTP answers as base64 to download them. A switch between rendered and raw markdown. Properties that switch to an editor when their label is clicked. Forms that fill a host action's fields, such as a branch's name. |
-| 0.1.4 | Draft | Processes, for the Task Manager plugin: the `processes` permission, the `processes` host call, and the `process.stop` and `process.kill` host actions. |
+| 0.1.4 | Draft | Processes, for the Task Manager plugin: the `processes` permission, the `processes` host call, and the `process.stop` and `process.kill` host actions. Themes for table rows and `clip` text, `navigate`'s `side`, and forms' `changed`. |
 
 ## Task Proxy releases
 

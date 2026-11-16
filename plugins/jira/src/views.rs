@@ -484,6 +484,7 @@ pub fn page(host: &dyn Host, fields: &Fields, params: &Map<String, Value>) -> Re
                 ui::row(actions),
             ],
             action: None,
+            theme: String::new(),
         });
     }
     Ok(ui::stack(vec![
@@ -609,6 +610,7 @@ fn work_table<'a>(
                 ui::TableRow {
                     cells,
                     action: None,
+                    theme: crate::fields::row_theme(issue, None),
                 }
             })
             .collect();
@@ -770,6 +772,7 @@ fn field_list(
         buttons: Vec::new(),
         children: Vec::new(),
         inline: false,
+        changed: None,
     });
     items
 }
@@ -916,6 +919,7 @@ fn editor(host: &dyn Host, fields: &Fields, draft: &Draft) -> Node {
         buttons: Vec::new(),
         children: Vec::new(),
         inline: false,
+        changed: None,
     });
     ui::stack(children)
 }

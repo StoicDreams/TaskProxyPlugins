@@ -75,6 +75,9 @@ pub enum Node {
         always: bool,
         #[serde(default, skip_serializing_if = "is_false")]
         muted: bool,
+        /// Colors the text, as an issue type's. Since spec 0.1.4: older hosts draw it without one.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        theme: String,
     },
     /// A part of the page with no title, shown or hidden by a button whose host action is `toggle` with the same
     /// `key`. Task Proxy remembers whether the user left it open, by `key`.
@@ -112,6 +115,10 @@ pub enum Node {
         /// hosts stack them.
         #[serde(default, skip_serializing_if = "is_false")]
         inline: bool,
+        /// What the submit button shows and runs once any field differs from the value it was drawn with, such as
+        /// Search for a form whose `submit` is Refresh. Since spec 0.1.4: older hosts always show `submit`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        changed: Option<Action>,
     },
     /// Items the user puts in order by dragging them, or with Alt+Up and Alt+Down. When the order changes, Task
     /// Proxy runs `action` with the items' ids in their new order as `order` in the form. Since spec 0.1.2: check
@@ -211,6 +218,9 @@ pub struct TableRow {
     /// Runs when the row is clicked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub action: Option<Action>,
+    /// Tints the row with a theme, as for a bug. Since spec 0.1.4: older hosts draw it without one.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub theme: String,
 }
 
 /// Something the user can click. Task Proxy sends `id` and `params` to the plugin's `action` export, or, when
@@ -456,6 +466,7 @@ pub fn clip(text: impl Into<String>, action: Option<Action>) -> Node {
         action,
         always: false,
         muted: false,
+        theme: String::new(),
     }
 }
 
@@ -485,6 +496,7 @@ pub fn form(fields: Vec<Field>, submit: Action) -> Node {
         buttons: Vec::new(),
         children: Vec::new(),
         inline: false,
+        changed: None,
     }
 }
 
@@ -525,6 +537,7 @@ mod tests {
                 rows: vec![TableRow {
                     cells: vec![text("P-1")],
                     action: Some(Action::new("open", "Open").param("key", "P-1")),
+                    theme: String::new(),
                 }],
             },
             button(Action::new("refresh", "Refresh").icon("rotate"), ""),
@@ -613,6 +626,7 @@ mod tests {
             buttons: Vec::new(),
             children: Vec::new(),
             inline: true,
+            changed: None,
         };
         assert_eq!(serde_json::to_value(&inline_form).unwrap()["inline"], true);
     }
@@ -630,6 +644,7 @@ mod tests {
             buttons: Vec::new(),
             children: Vec::new(),
             inline: false,
+            changed: None,
         };
         assert_eq!(
             serde_json::to_value(&form).unwrap(),

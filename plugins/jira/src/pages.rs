@@ -11,6 +11,19 @@ use taskproxy_plugin_sdk::{
 };
 
 const LAST_VIEW_KEY: &str = "lastView";
+/// Whether issues opened from My Issues and All Issues show beside the list. On unless the user turned it off.
+const SPLIT_VIEW_KEY: &str = "splitView";
+
+pub fn split_view(host: &dyn taskproxy_plugin_sdk::Host) -> Result<bool> {
+    Ok(host
+        .store_get(SPLIT_VIEW_KEY)?
+        .and_then(|value| value.as_bool())
+        .unwrap_or(true))
+}
+
+pub fn set_split_view(host: &dyn taskproxy_plugin_sdk::Host, on: bool) -> Result<()> {
+    host.store_set(SPLIT_VIEW_KEY, Some(json!(on)))
+}
 
 pub fn param<'a>(params: &'a Map<String, Value>, name: &str) -> &'a str {
     params.get(name).and_then(Value::as_str).unwrap_or("")
@@ -125,6 +138,7 @@ pub fn issue(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> 
             buttons: Vec::new(),
             children: Vec::new(),
             inline: false,
+            changed: None,
         },
     ];
     if !moves.is_empty() {
@@ -135,6 +149,7 @@ pub fn issue(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> 
             buttons: Vec::new(),
             children: Vec::new(),
             inline: false,
+            changed: None,
         });
     }
     children.extend(sections);
@@ -145,6 +160,7 @@ pub fn issue(jira: &Jira, fields: &Fields, page_params: &Map<String, Value>) -> 
         buttons: Vec::new(),
         children: Vec::new(),
         inline: false,
+        changed: None,
     });
     Ok(ui::stack(children))
 }
@@ -173,6 +189,7 @@ fn branch_form(suggested: &str) -> Node {
         )],
         children: Vec::new(),
         inline: true,
+        changed: None,
     }
 }
 
@@ -225,6 +242,7 @@ pub fn create(jira: &Jira, page_params: &Map<String, Value>) -> Result<Node> {
         buttons: Vec::new(),
         children: Vec::new(),
         inline: false,
+        changed: None,
     };
     if project.is_empty() {
         return Ok(ui::stack(vec![project_form]));
@@ -278,6 +296,7 @@ pub fn create(jira: &Jira, page_params: &Map<String, Value>) -> Result<Node> {
             buttons: Vec::new(),
             children: Vec::new(),
             inline: false,
+            changed: None,
         },
     ]))
 }
@@ -286,7 +305,15 @@ pub fn create(jira: &Jira, page_params: &Map<String, Value>) -> Result<Node> {
 pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResult>> {
     let p = &request.params;
     let result = match request.action.as_str() {
-        "open" => ActionResult::navigate("issue", params(&[("key", param(p, "key"))])),
+        "open" => {
+            let open = ActionResult::navigate("issue", params(&[("key", param(p, "key"))]));
+            // From a list, the issue opens beside it, so the list stays where it was.
+            if matches!(request.page.as_str(), "issues" | "all") && split_view(jira.host)? {
+                open.beside()
+            } else {
+                open
+            }
+        }
         "issue.refresh" => ActionResult::refresh(),
         "issue.view" => {
             let view = form(request, "view");
