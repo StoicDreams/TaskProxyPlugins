@@ -1379,7 +1379,7 @@ fn set_choice(jira: &Jira, fields: &Fields, key: &str, real: &str, value: &str) 
             )?;
         }
     } else if fields.is_story_points(real) {
-        let real = story_points_target(jira, fields, key, real);
+        let targets = story_points_targets(jira, fields, key, real);
         let points = if value.is_empty() {
             Value::Null
         } else {
@@ -1389,7 +1389,9 @@ fn set_choice(jira: &Jira, fields: &Fields, key: &str, real: &str, value: &str) 
                     .map_err(|_| Error::new("Story points must be a number."))?
             )
         };
-        jira.put(&issue, &json!({ "fields": { real.as_str(): points } }))?;
+        let values: serde_json::Map<String, Value> =
+            targets.into_iter().map(|id| (id, points.clone())).collect();
+        jira.put(&issue, &json!({ "fields": values }))?;
     } else {
         let choice = if value.is_empty() {
             Value::Null
@@ -1401,21 +1403,28 @@ fn set_choice(jira: &Jira, fields: &Fields, key: &str, real: &str, value: &str) 
     Ok(())
 }
 
-/// Which story points field to set on an issue: the one its edit screen has, since a site with several only shows
-/// the one its project uses.
-fn story_points_target(jira: &Jira, fields: &Fields, key: &str, real: &str) -> String {
+/// Which story points fields to set on an issue: every one its edit screen has. A site with several often has more
+/// than one on a screen, and Jira shows only the one its board estimates with, so setting just one could change a
+/// field Jira does not show, which the list would still show as set.
+fn story_points_targets(jira: &Jira, fields: &Fields, key: &str, real: &str) -> Vec<String> {
     let ids = fields.story_points_ids();
     if ids.len() < 2 {
-        return real.to_string();
+        return vec![real.to_string()];
     }
-    jira.get(&format!("issue/{}/editmeta", encode(key)))
-        .ok()
-        .and_then(|meta| {
+    let on_screen: Vec<String> = jira
+        .get(&format!("issue/{}/editmeta", encode(key)))
+        .map(|meta| {
             ids.iter()
-                .find(|id| meta.pointer(&format!("/fields/{}", id)).is_some())
+                .filter(|id| meta.pointer(&format!("/fields/{}", id)).is_some())
                 .cloned()
+                .collect()
         })
-        .unwrap_or_else(|| real.to_string())
+        .unwrap_or_default();
+    if on_screen.is_empty() {
+        vec![real.to_string()]
+    } else {
+        on_screen
+    }
 }
 
 /// The panel a text field's editor is in, shown by its Edit button.
@@ -2280,6 +2289,48 @@ mod tests {
         assert!(offered(1, KEY));
         assert!(!offered(1, STORY_POINTS));
         assert!(offered(2, STORY_POINTS));
+    }
+
+    #[test]
+    fn story_points_are_set_in_every_story_points_field_on_the_edit_screen() {
+        let host = connected();
+        host.answer("GET", "/rest/api/3/field", 200, sample_fields());
+        // Jira shows "Story Points" on this issue, but its edit screen has "Story point estimate" too.
+        host.answer(
+            "GET",
+            "/rest/api/3/issue/IR-10/editmeta",
+            200,
+            json!({ "fields": { "customfield_10016": {}, "customfield_10026": {}, "summary": {} } }),
+        );
+        host.answer("PUT", "/rest/api/3/issue/IR-10", 204, Value::Null);
+        host.answer(
+            "GET",
+            "/rest/api/3/issue/IR-11/editmeta",
+            200,
+            json!({ "fields": { "customfield_10026": {} } }),
+        );
+        host.answer("PUT", "/rest/api/3/issue/IR-11", 204, Value::Null);
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        set_choice(&jira, &fields, "IR-10", "customfield_10016", "8").unwrap();
+        set_choice(&jira, &fields, "IR-10", "customfield_10016", "").unwrap();
+        set_choice(&jira, &fields, "IR-11", "customfield_10016", "3").unwrap();
+        let sent = host.sent.borrow();
+        let puts: Vec<Value> = sent
+            .iter()
+            .filter(|sent| sent.method == "PUT")
+            .map(|sent| serde_json::from_str(sent.body.as_deref().unwrap()).unwrap())
+            .collect();
+        assert_eq!(
+            puts[0],
+            json!({ "fields": { "customfield_10016": 8.0, "customfield_10026": 8.0 } })
+        );
+        assert_eq!(
+            puts[1],
+            json!({ "fields": { "customfield_10016": null, "customfield_10026": null } })
+        );
+        // Only the field its screen has, even though the column is the other one.
+        assert_eq!(puts[2], json!({ "fields": { "customfield_10026": 3.0 } }));
     }
 
     #[test]
