@@ -861,6 +861,15 @@ pub fn page(
     } else {
         Vec::new()
     };
+    // Story points show from the field each project's board estimates with, as Jira shows them.
+    fields.learn(
+        jira,
+        issues
+            .iter()
+            .chain(&parents)
+            .chain(&grandparents)
+            .map(key_of),
+    );
     let by_key = |pool: &[Value], key: Option<&str>| -> Option<Value> {
         let key = key?;
         pool.iter().find(|issue| key_of(issue) == key).cloned()

@@ -2,12 +2,17 @@
 use crate::adf;
 use crate::client::Jira;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use taskproxy_plugin_sdk::ui::{self, Node};
-use taskproxy_plugin_sdk::{Result, Value, json};
+use taskproxy_plugin_sdk::{Map, Result, Value, json};
 
 /// The field list changes rarely, so it is kept for a day.
 const CACHE_MS: u64 = 24 * 60 * 60 * 1000;
 const CACHE_KEY: &str = "fields";
+
+/// Which story points field each project's boards estimate with, kept for a day.
+const ESTIMATION_MS: u64 = 24 * 60 * 60 * 1000;
+const ESTIMATION_KEY: &str = "estimation";
 
 const STORY_POINTS_NAMES: [&str; 3] = ["Story point estimate", "Story Points", "Story points"];
 
@@ -60,6 +65,16 @@ const HIDDEN: [&str; 9] = [
 
 pub struct Fields {
     pub list: Vec<FieldInfo>,
+    /// The story points field each project's board estimates with, by project key, or "" when none was found. Jira
+    /// shows only that one, so it is the one shown here too, even when another story points field has a value.
+    estimation: RefCell<Map<String, Value>>,
+}
+
+/// The project an issue key belongs to, such as IR for IR-11645.
+fn project_of(key: &str) -> &str {
+    key.rsplit_once('-')
+        .map(|(project, _)| project)
+        .unwrap_or(key)
 }
 
 fn read_list(body: &Value) -> Vec<FieldInfo> {
@@ -102,14 +117,85 @@ impl Fields {
             && now.saturating_sub(at) < CACHE_MS
             && let Ok(list) = serde_json::from_value::<Vec<FieldInfo>>(cached["list"].clone())
         {
-            return Ok(Fields { list });
+            return Fields::new(list, jira);
         }
         let list = read_list(&jira.get("field")?);
         jira.host.store_set(
             CACHE_KEY,
             Some(json!({ "site": site, "at": now, "list": list })),
         )?;
-        Ok(Fields { list })
+        Fields::new(list, jira)
+    }
+
+    fn new(list: Vec<FieldInfo>, jira: &Jira) -> Result<Fields> {
+        let now = jira.host.now_ms()?;
+        let estimation = jira
+            .host
+            .store_get(ESTIMATION_KEY)?
+            .filter(|cached| {
+                cached.get("site").and_then(Value::as_str) == Some(jira.site.as_str())
+                    && cached
+                        .get("at")
+                        .and_then(Value::as_u64)
+                        .is_some_and(|at| now.saturating_sub(at) < ESTIMATION_MS)
+            })
+            .and_then(|cached| cached.get("projects").and_then(Value::as_object).cloned())
+            .unwrap_or_default();
+        Ok(Fields {
+            list,
+            estimation: RefCell::new(estimation),
+        })
+    }
+
+    #[cfg(test)]
+    pub fn from_list(list: Vec<FieldInfo>) -> Fields {
+        Fields {
+            list,
+            estimation: RefCell::new(Map::new()),
+        }
+    }
+
+    /// Finds which story points field the boards of these issues' projects estimate with, for projects not looked
+    /// up in the last day. Only needed on a site with more than one story points field.
+    pub fn learn<'a>(&self, jira: &Jira, keys: impl IntoIterator<Item = &'a str>) {
+        let ids = self.story_points_ids();
+        if ids.len() < 2 {
+            return;
+        }
+        let mut missing: Vec<String> = Vec::new();
+        for key in keys {
+            let project = project_of(key).to_string();
+            if !project.is_empty()
+                && !missing.contains(&project)
+                && !self.estimation.borrow().contains_key(&project)
+            {
+                missing.push(project);
+            }
+        }
+        if missing.is_empty() {
+            return;
+        }
+        for project in missing {
+            let field = estimation_field(jira, &project, &ids).unwrap_or_default();
+            self.estimation.borrow_mut().insert(project, json!(field));
+        }
+        let projects = self.estimation.borrow().clone();
+        if let Ok(now) = jira.host.now_ms() {
+            let _ = jira.host.store_set(
+                ESTIMATION_KEY,
+                Some(json!({ "site": jira.site, "at": now, "projects": projects })),
+            );
+        }
+    }
+
+    /// The story points field Jira shows for this issue's project, when its board says.
+    fn estimation_of(&self, key: &str) -> Option<String> {
+        self.estimation
+            .borrow()
+            .get(project_of(key))
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty() && self.is_story_points(id))
+            .map(String::from)
     }
 
     pub fn find(&self, id: &str) -> Option<&FieldInfo> {
@@ -180,6 +266,10 @@ impl Fields {
         }
         let values = issue.get("fields").unwrap_or(&Value::Null);
         if self.is_story_points(real) {
+            let key = issue.get("key").and_then(Value::as_str).unwrap_or("");
+            if let Some(id) = self.estimation_of(key) {
+                return values.get(&id).cloned().unwrap_or(Value::Null);
+            }
             return self
                 .story_points_ids()
                 .iter()
@@ -367,6 +457,32 @@ fn comments(value: &Value) -> Node {
     )
 }
 
+/// The story points field a project's boards estimate with, from the first board that estimates with one.
+fn estimation_field(jira: &Jira, project: &str, ids: &[String]) -> Option<String> {
+    let boards = jira
+        .agile_get(&format!(
+            "board?projectKeyOrId={}&maxResults=20",
+            crate::client::encode(project)
+        ))
+        .ok()?;
+    for board in boards.get("values").and_then(Value::as_array)? {
+        let Some(id) = board.get("id").and_then(Value::as_u64) else {
+            continue;
+        };
+        let Ok(config) = jira.agile_get(&format!("board/{}/configuration", id)) else {
+            continue;
+        };
+        if let Some(field) = config
+            .pointer("/estimation/field/fieldId")
+            .and_then(Value::as_str)
+            .filter(|field| ids.iter().any(|id| id == field))
+        {
+            return Some(field.to_string());
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,9 +490,7 @@ mod tests {
 
     #[test]
     fn values_come_from_the_key_and_whichever_story_points_field_is_set() {
-        let fields = Fields {
-            list: read_list(&sample_fields()),
-        };
+        let fields = Fields::from_list(read_list(&sample_fields()));
         let story = json!({ "key": "P-10", "fields": {
             "summary": "Story", "customfield_10016": null, "customfield_10026": 5
         } });
@@ -392,6 +506,64 @@ mod tests {
             fields.wanted(&["summary".into(), "customfield_10016".into()]),
             vec!["summary", "customfield_10016", "customfield_10026"]
         );
+    }
+
+    #[test]
+    fn story_points_show_from_the_field_the_projects_board_estimates_with() {
+        let host = FakeHost::connected();
+        host.answer("GET", "/rest/api/3/field", 200, sample_fields());
+        host.answer(
+            "GET",
+            "/rest/agile/1.0/board?projectKeyOrId=IR&maxResults=20",
+            200,
+            json!({ "values": [{ "id": 7 }, { "id": 8 }] }),
+        );
+        host.answer(
+            "GET",
+            "/rest/agile/1.0/board?projectKeyOrId=T&maxResults=20",
+            200,
+            json!({ "values": [] }),
+        );
+        // The first board is kanban with no estimation; the second estimates with "Story Points".
+        host.answer(
+            "GET",
+            "/rest/agile/1.0/board/7/configuration",
+            200,
+            json!({ "id": 7 }),
+        );
+        host.answer("GET", "/rest/agile/1.0/board/8/configuration", 200, json!({ "estimation": {
+            "type": "field", "field": { "fieldId": "customfield_10026", "displayName": "Story Points" }
+        } }));
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        // Jira shows 3 in Story Points, and an older 2 is left in Story point estimate.
+        let parent = json!({ "key": "IR-11645", "fields": { "customfield_10016": 2, "customfield_10026": 3 } });
+        let unset = json!({ "key": "IR-11646", "fields": { "customfield_10016": 2, "customfield_10026": null } });
+        let team = json!({ "key": "T-1", "fields": { "customfield_10016": 5 } });
+        assert_eq!(
+            fields.value_of(&parent, "customfield_10016"),
+            json!(2),
+            "not learned yet"
+        );
+        fields.learn(&jira, ["IR-11645", "IR-11646", "T-1"]);
+        assert_eq!(fields.value_of(&parent, "customfield_10016"), json!(3));
+        assert_eq!(
+            fields.value_of(&unset, "customfield_10026"),
+            Value::Null,
+            "Jira shows none"
+        );
+        assert_eq!(
+            fields.value_of(&team, "customfield_10016"),
+            json!(5),
+            "no board, so whichever is set"
+        );
+        // Learned once, and kept for the next load.
+        let asked = host.sent.borrow().len();
+        fields.learn(&jira, ["IR-1"]);
+        let again = Fields::load(&jira).unwrap();
+        again.learn(&jira, ["IR-2", "T-2"]);
+        assert_eq!(host.sent.borrow().len(), asked);
+        assert_eq!(again.value_of(&parent, "customfield_10026"), json!(3));
     }
 
     #[test]

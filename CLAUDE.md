@@ -26,6 +26,10 @@ cargo run -p taskproxy-jira --example demo -- plugins/jira/demo   # Refresh the 
 - `test-plugin/`: makes whatever host call a test asks for, so Task Proxy's tests can check what is allowed. Its built `.wasm` is committed in TaskProxyApp.
 - `plugins/jira/`: the Jira Cloud plugin. `client.rs` (REST API v3 with email and API token), `adf.rs` (Atlassian Document Format to and from markdown), `fields.rs`, `views.rs` (layered Views), `pages.rs`, `demo.rs`.
 
+## Tests
+
+**Tests check what the software does, never how it looks** (the standard for every Stoic Dreams project, set 2026-11-17, in full in `Websites/CLAUDE.md`). Assert what is shown or hidden, its text, order, what an action does, and what is sent, saved, or returned. Never assert pixel positions, sizes, spacing, scroll offsets, or specific colors, fonts, or theme values: layout and look are checked by eye in the recorded screenshots and loops. `toBeVisible` and `toBeInViewport` are fine, scrolling is tested as what happens (the page not moving when a pane scrolls), and plugin screens are tested by the UI they return.
+
 ## Things that will catch you out
 
 - **Pushing to `main` publishes every plugin** to the CDN catalog. Don't push unless asked.

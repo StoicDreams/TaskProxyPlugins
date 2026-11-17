@@ -352,6 +352,7 @@ pub fn layers(jira: &Jira, fields: &Fields, view: &View, key: &str) -> Result<(V
             .and_then(Value::as_str)
             .unwrap_or(&current)
             .to_string();
+        fields.learn(jira, [issue_key.as_str()]);
         let summary = issue_fields
             .get("summary")
             .and_then(Value::as_str)
