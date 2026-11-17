@@ -1388,19 +1388,7 @@ fn set_choice(jira: &Jira, fields: &Fields, key: &str, real: &str, value: &str) 
             )?;
         }
     } else if fields.is_story_points(real) {
-        let targets = story_points_targets(jira, fields, key, real);
-        let points = if value.is_empty() {
-            Value::Null
-        } else {
-            json!(
-                value
-                    .parse::<f64>()
-                    .map_err(|_| Error::new("Story points must be a number."))?
-            )
-        };
-        let values: serde_json::Map<String, Value> =
-            targets.into_iter().map(|id| (id, points.clone())).collect();
-        jira.put(&issue, &json!({ "fields": values }))?;
+        set_story_points(jira, fields, key, real, value)?;
     } else {
         let choice = if value.is_empty() {
             Value::Null
@@ -1408,6 +1396,65 @@ fn set_choice(jira: &Jira, fields: &Fields, key: &str, real: &str, value: &str) 
             json!({ "id": value })
         };
         jira.put(&issue, &json!({ "fields": { real: choice } }))?;
+    }
+    Ok(())
+}
+
+/// Sets an issue's story points, then reads them back, since Jira accepts a change to a story points field it does
+/// not show and nothing seems to happen.
+fn set_story_points(
+    jira: &Jira,
+    fields: &Fields,
+    key: &str,
+    real: &str,
+    value: &str,
+) -> Result<()> {
+    let issue = format!("issue/{}", encode(key));
+    let points = if value.is_empty() {
+        None
+    } else {
+        Some(
+            value
+                .parse::<f64>()
+                .map_err(|_| Error::new("Story points must be a number."))?,
+        )
+    };
+    fields.learn(jira, [key]);
+    let shown = fields.estimation_of(key);
+    // The board's estimation sets the field Jira shows, even when the issue's edit screen does not have it.
+    if let Some(board) = fields.estimation_board(key) {
+        jira.agile_put(
+            &format!("issue/{}/estimation?boardId={}", encode(key), board),
+            &json!({ "value": points.map(|points| points.to_string()) }),
+        )?;
+    }
+    // The other story points fields on its edit screen are set too, so none keeps an older value.
+    let targets: Vec<String> = story_points_targets(jira, fields, key, real)
+        .into_iter()
+        .filter(|id| shown.as_deref() != Some(id.as_str()))
+        .collect();
+    if !targets.is_empty() {
+        let values: serde_json::Map<String, Value> = targets
+            .into_iter()
+            .map(|id| (id, points.map_or(Value::Null, |points| json!(points))))
+            .collect();
+        let result = jira.put(&issue, &json!({ "fields": values }));
+        if shown.is_none() {
+            result?;
+        }
+    }
+    let wanted = fields.wanted(&[real.to_string()]);
+    let after = jira.get(&format!("{}?fields={}", issue, wanted.join(",")))?;
+    let now = fields.value_of(&after, real).as_f64();
+    if now != points {
+        let name = shown
+            .as_deref()
+            .map(|id| fields.name(id))
+            .unwrap_or_else(|| fields.name(real));
+        return Err(Error(format!(
+            "Jira did not change {} on {}. It may not be on the issue's edit screen, or you may not be allowed to estimate it.",
+            name, key
+        )));
     }
     Ok(())
 }
@@ -2301,45 +2348,144 @@ mod tests {
     }
 
     #[test]
-    fn story_points_are_set_in_every_story_points_field_on_the_edit_screen() {
-        let host = connected();
-        host.answer("GET", "/rest/api/3/field", 200, sample_fields());
-        // Jira shows "Story Points" on this issue, but its edit screen has "Story point estimate" too.
-        host.answer(
-            "GET",
-            "/rest/api/3/issue/IR-10/editmeta",
-            200,
-            json!({ "fields": { "customfield_10016": {}, "customfield_10026": {}, "summary": {} } }),
+    fn story_points_are_set_through_the_board_and_on_the_edit_screen_then_checked() {
+        // Jira shows "Story Points" on IR, whose board estimates with it, but its edit screen only has "Story point
+        // estimate", so the board's estimation sets it.
+        let setup = |after: Value| {
+            let host = connected();
+            host.answer("GET", "/rest/api/3/field", 200, sample_fields());
+            host.answer(
+                "GET",
+                "/rest/agile/1.0/board?projectKeyOrId=IR&maxResults=20",
+                200,
+                json!({ "values": [{ "id": 8 }] }),
+            );
+            host.answer(
+                "GET",
+                "/rest/agile/1.0/board/8/configuration",
+                200,
+                json!({ "estimation": {
+                "type": "field", "field": { "fieldId": "customfield_10026" }
+            } }),
+            );
+            host.answer(
+                "GET",
+                "/rest/api/3/issue/IR-10/editmeta",
+                200,
+                json!({ "fields": { "customfield_10016": {}, "summary": {} } }),
+            );
+            host.answer(
+                "PUT",
+                "/rest/agile/1.0/issue/IR-10/estimation?boardId=8",
+                200,
+                json!({ "fieldId": "customfield_10026" }),
+            );
+            host.answer("PUT", "/rest/api/3/issue/IR-10", 204, Value::Null);
+            host.answer(
+                "GET",
+                "/rest/api/3/issue/IR-10?fields=customfield_10016,customfield_10026",
+                200,
+                after,
+            );
+            host
+        };
+        let host = setup(
+            json!({ "key": "IR-10", "fields": { "customfield_10016": 8, "customfield_10026": 8 } }),
         );
-        host.answer("PUT", "/rest/api/3/issue/IR-10", 204, Value::Null);
-        host.answer(
-            "GET",
-            "/rest/api/3/issue/IR-11/editmeta",
-            200,
-            json!({ "fields": { "customfield_10026": {} } }),
-        );
-        host.answer("PUT", "/rest/api/3/issue/IR-11", 204, Value::Null);
         let jira = Jira::connect(&host).unwrap().unwrap();
         let fields = Fields::load(&jira).unwrap();
         set_choice(&jira, &fields, "IR-10", "customfield_10016", "8").unwrap();
-        set_choice(&jira, &fields, "IR-10", "customfield_10016", "").unwrap();
-        set_choice(&jira, &fields, "IR-11", "customfield_10016", "3").unwrap();
-        let sent = host.sent.borrow();
-        let puts: Vec<Value> = sent
+        let writes: Vec<(String, Value)> = host
+            .sent
+            .borrow()
             .iter()
             .filter(|sent| sent.method == "PUT")
-            .map(|sent| serde_json::from_str(sent.body.as_deref().unwrap()).unwrap())
+            .map(|sent| {
+                (
+                    sent.url.clone(),
+                    serde_json::from_str(sent.body.as_deref().unwrap()).unwrap(),
+                )
+            })
             .collect();
         assert_eq!(
-            puts[0],
-            json!({ "fields": { "customfield_10016": 8.0, "customfield_10026": 8.0 } })
+            writes,
+            vec![
+                (
+                    "https://team.atlassian.net/rest/agile/1.0/issue/IR-10/estimation?boardId=8"
+                        .to_string(),
+                    json!({ "value": "8" })
+                ),
+                (
+                    "https://team.atlassian.net/rest/api/3/issue/IR-10".to_string(),
+                    json!({ "fields": { "customfield_10016": 8.0 } })
+                ),
+            ]
         );
+
+        // Clearing sends no value.
+        let host = setup(
+            json!({ "key": "IR-10", "fields": { "customfield_10016": null, "customfield_10026": null } }),
+        );
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        set_choice(&jira, &fields, "IR-10", "customfield_10016", "").unwrap();
+        let sent = host.sent.borrow();
+        let estimate = sent
+            .iter()
+            .find(|sent| sent.url.contains("/estimation"))
+            .unwrap();
         assert_eq!(
-            puts[1],
-            json!({ "fields": { "customfield_10016": null, "customfield_10026": null } })
+            serde_json::from_str::<Value>(estimate.body.as_deref().unwrap()).unwrap(),
+            json!({ "value": null })
         );
-        // Only the field its screen has, even though the column is the other one.
-        assert_eq!(puts[2], json!({ "fields": { "customfield_10026": 3.0 } }));
+        drop(sent);
+
+        // Jira took the change but the points it shows did not change, which is an error, not silence.
+        let host = setup(
+            json!({ "key": "IR-10", "fields": { "customfield_10016": 3, "customfield_10026": 2 } }),
+        );
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        let error = set_choice(&jira, &fields, "IR-10", "customfield_10016", "3").unwrap_err();
+        assert!(
+            error
+                .0
+                .contains("Jira did not change Story Points on IR-10"),
+            "{}",
+            error.0
+        );
+
+        // With no board that estimates with story points, every one on the edit screen is set.
+        let host = connected();
+        host.answer("GET", "/rest/api/3/field", 200, sample_fields());
+        host.answer(
+            "GET",
+            "/rest/agile/1.0/board?projectKeyOrId=P&maxResults=20",
+            200,
+            json!({ "values": [] }),
+        );
+        host.answer(
+            "GET",
+            "/rest/api/3/issue/P-1/editmeta",
+            200,
+            json!({ "fields": { "customfield_10016": {}, "customfield_10026": {} } }),
+        );
+        host.answer("PUT", "/rest/api/3/issue/P-1", 204, Value::Null);
+        host.answer(
+            "GET",
+            "/rest/api/3/issue/P-1?fields=customfield_10016,customfield_10026",
+            200,
+            json!({ "key": "P-1", "fields": { "customfield_10016": 5, "customfield_10026": 5 } }),
+        );
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        set_choice(&jira, &fields, "P-1", "customfield_10026", "5").unwrap();
+        let sent = host.sent.borrow();
+        let put = sent.iter().find(|sent| sent.method == "PUT").unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(put.body.as_deref().unwrap()).unwrap(),
+            json!({ "fields": { "customfield_10016": 5.0, "customfield_10026": 5.0 } })
+        );
     }
 
     #[test]
@@ -2420,6 +2566,13 @@ mod tests {
             Value::Null,
         );
         host.answer("PUT", "/rest/api/3/issue/P-1", 204, Value::Null);
+        // Story points are read back after they are set.
+        host.answer(
+            "GET",
+            "/rest/api/3/issue/P-1?fields=customfield_10016,customfield_10026",
+            200,
+            json!({ "key": "P-1", "fields": { "customfield_10016": 5 } }),
+        );
         host.answer("POST", "/rest/agile/1.0/sprint/42/issue", 204, Value::Null);
         let jira = Jira::connect(&host).unwrap().unwrap();
         let run = |name: &str, params: Value, form: Value| {

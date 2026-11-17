@@ -188,6 +188,12 @@ impl<'a> Jira<'a> {
         ))
     }
 
+    pub fn agile_put(&self, path: &str, body: &Value) -> Result<Value> {
+        self.send(
+            HttpRequest::new("PUT", format!("{}/rest/agile/1.0/{}", self.site, path)).json(body),
+        )
+    }
+
     pub fn agile_post(&self, path: &str, body: &Value) -> Result<Value> {
         self.send(
             HttpRequest::new("POST", format!("{}/rest/agile/1.0/{}", self.site, path)).json(body),

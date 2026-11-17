@@ -167,7 +167,12 @@ impl Fields {
             let project = project_of(key).to_string();
             if !project.is_empty()
                 && !missing.contains(&project)
-                && !self.estimation.borrow().contains_key(&project)
+                // Entries from before boards were kept are looked up again.
+                && !self
+                    .estimation
+                    .borrow()
+                    .get(&project)
+                    .is_some_and(Value::is_object)
             {
                 missing.push(project);
             }
@@ -176,8 +181,10 @@ impl Fields {
             return;
         }
         for project in missing {
-            let field = estimation_field(jira, &project, &ids).unwrap_or_default();
-            self.estimation.borrow_mut().insert(project, json!(field));
+            let found = estimation_field(jira, &project, &ids)
+                .map(|(field, board)| json!({ "field": field, "board": board }))
+                .unwrap_or_else(|| json!({}));
+            self.estimation.borrow_mut().insert(project, found);
         }
         let projects = self.estimation.borrow().clone();
         if let Ok(now) = jira.host.now_ms() {
@@ -189,13 +196,24 @@ impl Fields {
     }
 
     /// The story points field Jira shows for this issue's project, when its board says.
-    fn estimation_of(&self, key: &str) -> Option<String> {
+    pub fn estimation_of(&self, key: &str) -> Option<String> {
         self.estimation
             .borrow()
             .get(project_of(key))
+            .and_then(|found| found.get("field"))
             .and_then(Value::as_str)
-            .filter(|id| !id.is_empty() && self.is_story_points(id))
+            .filter(|id| self.is_story_points(id))
             .map(String::from)
+    }
+
+    /// The board whose estimation is that field, which can set it even when the issue's edit screen lacks it.
+    pub fn estimation_board(&self, key: &str) -> Option<u64> {
+        self.estimation_of(key)?;
+        self.estimation
+            .borrow()
+            .get(project_of(key))
+            .and_then(|found| found.get("board"))
+            .and_then(Value::as_u64)
     }
 
     pub fn find(&self, id: &str) -> Option<&FieldInfo> {
@@ -458,7 +476,7 @@ fn comments(value: &Value) -> Node {
 }
 
 /// The story points field a project's boards estimate with, from the first board that estimates with one.
-fn estimation_field(jira: &Jira, project: &str, ids: &[String]) -> Option<String> {
+fn estimation_field(jira: &Jira, project: &str, ids: &[String]) -> Option<(String, u64)> {
     let boards = jira
         .agile_get(&format!(
             "board?projectKeyOrId={}&maxResults=20",
@@ -477,7 +495,7 @@ fn estimation_field(jira: &Jira, project: &str, ids: &[String]) -> Option<String
             .and_then(Value::as_str)
             .filter(|field| ids.iter().any(|id| id == field))
         {
-            return Some(field.to_string());
+            return Some((field.to_string(), id));
         }
     }
     None
