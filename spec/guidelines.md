@@ -23,6 +23,7 @@ The [spec](0.1.md) says what Task Proxy requires. These guidelines are about bui
 - **Confirm what can't be undone.** Give every action that deletes, sends, or changes something outside Task Proxy a `confirm` question that names what will happen: "Delete the comment on PROJ-12?", not "Are you sure?".
 - **Say what happened.** After a change, return a short `message` or redraw the page so the change shows. Use `refresh` rather than rebuilding the page yourself when the data changed behind it.
 - **Show an `empty` node** for a list with nothing in it, saying why and what to do: "No issues are assigned to you. Try All Issues."
+- **Use a switch for anything with two states.** Something that is on or off, such as a split view, is a `button` with `on` (`ui::switch` in the SDK), labeled with what it switches, such as "Split view", never a button whose label says "On" or "Off".
 - **Load choices late.** For a value changed in place, use a `select` node, whose choices are asked for only when it is clicked, rather than a form with every choice for every row.
 - **Write plain, short text.** Use sentence case, a person's words rather than an API's ("Story points", not `customfield_10016`), and messages that say what to do next. Error messages from your exports are shown as they are, so make them sentences.
 - **Check every icon name** against `https://cdn.myfi.ws/icons/all.json`. An unknown name shows a placeholder.

@@ -21,6 +21,24 @@ pub fn split_view(host: &dyn taskproxy_plugin_sdk::Host) -> Result<bool> {
         .unwrap_or(true))
 }
 
+/// Whether Task Proxy can show an issue covering the list, with a button on each to switch between them (navigate's
+/// `cover`, spec 0.1.4). Task Proxy 0.1.150 shows issues beside the list but knows no `cover`, and Task Proxy reports
+/// spec 0.1.3 until 0.1.4 is released, so later app versions count too.
+pub fn host_covers(host: &dyn taskproxy_plugin_sdk::Host) -> bool {
+    if taskproxy_plugin_sdk::host_supports(host, "0.1.4") {
+        return true;
+    }
+    let Ok(info) = host.host_info() else {
+        return false;
+    };
+    let parts: Vec<u64> = info
+        .app
+        .split('.')
+        .map(|part| part.parse().unwrap_or(0))
+        .collect();
+    parts.len() == 3 && (parts[0], parts[1], parts[2]) > (0, 1, 150)
+}
+
 pub fn set_split_view(host: &dyn taskproxy_plugin_sdk::Host, on: bool) -> Result<()> {
     host.store_set(SPLIT_VIEW_KEY, Some(json!(on)))
 }
@@ -307,9 +325,15 @@ pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResul
     let result = match request.action.as_str() {
         "open" => {
             let open = ActionResult::navigate("issue", params(&[("key", param(p, "key"))]));
-            // From a list, the issue opens beside it, so the list stays where it was.
-            if matches!(request.page.as_str(), "issues" | "all") && split_view(jira.host)? {
+            // From a list, the issue opens beside it, so the list stays where it was. With split view off, it covers
+            // the list instead, with a button on each to switch between them, or opens in its place where Task
+            // Proxy cannot do that.
+            if !matches!(request.page.as_str(), "issues" | "all") {
+                open
+            } else if split_view(jira.host)? {
                 open.beside()
+            } else if host_covers(jira.host) {
+                open.beside().cover(true)
             } else {
                 open
             }

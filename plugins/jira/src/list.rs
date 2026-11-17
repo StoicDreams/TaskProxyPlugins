@@ -955,17 +955,9 @@ pub fn page(
             ui::toggle("Columns", COLUMNS_PANEL),
             ui::toggle("Save search", SAVE_PANEL),
             // Whether an issue opens beside the list, or in its place.
-            ui::button(
-                Action::new(
-                    "list.split",
-                    if split {
-                        "Split view: On"
-                    } else {
-                        "Split view: Off"
-                    },
-                )
-                .icon("table-columns"),
-                if split { "primary" } else { "secondary" },
+            ui::switch(
+                Action::new("list.split", "Split view").icon("table-columns"),
+                split,
             ),
         ],
         // Refresh runs the search again as it is, and the button becomes Search once the user changes it. Both
@@ -1549,8 +1541,14 @@ pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResul
     let real = param(p, "field");
     let result = match request.action.as_str() {
         "list.split" => {
-            crate::pages::set_split_view(host, !crate::pages::split_view(host)?)?;
-            ActionResult::refresh()
+            let on = !crate::pages::split_view(host)?;
+            crate::pages::set_split_view(host, on)?;
+            // An issue already open beside the list switches between beside it and covering it.
+            if crate::pages::host_covers(host) {
+                ActionResult::refresh().cover(!on)
+            } else {
+                ActionResult::refresh()
+            }
         }
         "list.search" => {
             let mut params = search_params(&request.page_params);
@@ -1962,7 +1960,8 @@ mod tests {
         assert!(open("all").side);
         // From the issue page itself, a linked issue opens in its place.
         assert!(!open("issue").side);
-        let toggle = |label: &str| {
+        // The split view switch, as its label and whether it is on.
+        let switch = || {
             let node = page(
                 &jira,
                 &Fields::load(&jira).unwrap(),
@@ -1970,9 +1969,22 @@ mod tests {
                 &page_params(json!({})),
             )
             .unwrap();
-            serde_json::to_string(&node).unwrap().contains(label)
+            fn find(value: &Value) -> Option<(String, Option<bool>)> {
+                if value["type"] == "button" && value["action"]["id"] == "list.split" {
+                    return Some((
+                        value["action"]["label"].as_str()?.to_string(),
+                        value["on"].as_bool(),
+                    ));
+                }
+                match value {
+                    Value::Array(items) => items.iter().find_map(find),
+                    Value::Object(map) => map.values().find_map(find),
+                    _ => None,
+                }
+            }
+            find(&serde_json::to_value(&node).unwrap()).unwrap()
         };
-        assert!(toggle("Split view: On"));
+        assert_eq!(switch(), ("Split view".to_string(), Some(true)));
         let turned = action(
             &jira,
             &request("issues", "list.split", json!({}), json!({}), json!({})),
@@ -1981,10 +1993,75 @@ mod tests {
         .unwrap();
         assert!(turned.refresh);
         assert!(!open("issues").side);
-        assert!(toggle("Split view: Off"));
+        assert_eq!(switch(), ("Split view".to_string(), Some(false)));
         // Older hosts read no side, and the field is left out when it is off.
         let json = serde_json::to_value(open("issues")).unwrap();
         assert!(json.get("side").is_none());
+    }
+
+    #[test]
+    fn with_split_view_off_issues_cover_the_list_where_task_proxy_can() {
+        let host = connected();
+        host.answer(
+            "POST",
+            "/rest/api/3/search/jql",
+            200,
+            json!({ "isLast": true, "issues": [] }),
+        );
+        // Task Proxy reports spec 0.1.3 until 0.1.4 is released, so its version says whether it can cover.
+        *host.spec.borrow_mut() = Some("0.1.3".into());
+        *host.app.borrow_mut() = Some("0.1.151".into());
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let run = |name: &str| {
+            action(
+                &jira,
+                &request(
+                    "issues",
+                    name,
+                    json!({ "key": "P-1" }),
+                    json!({}),
+                    json!({}),
+                ),
+            )
+            .unwrap()
+            .unwrap()
+        };
+        let open = || {
+            crate::pages::action(
+                &jira,
+                &request(
+                    "issues",
+                    "open",
+                    json!({ "key": "P-1" }),
+                    json!({}),
+                    json!({}),
+                ),
+            )
+            .unwrap()
+            .unwrap()
+            .navigate
+            .unwrap()
+        };
+        // On, the issue opens beside the list.
+        let beside = open();
+        assert!(beside.side && !beside.cover);
+        // Turning it off makes an issue already beside the list cover it, and new ones open covering it.
+        let off = run("list.split");
+        assert!(off.refresh);
+        assert_eq!(off.cover, Some(true));
+        let covering = open();
+        assert!(covering.side && covering.cover);
+        assert_eq!(covering.params["key"], "P-1");
+        // Turning it back on shows them side by side again.
+        assert_eq!(run("list.split").cover, Some(false));
+        assert!(!open().cover);
+        // Task Proxy 0.1.150 shows a side page but cannot cover, so with split view off the issue opens in place.
+        *host.app.borrow_mut() = Some("0.1.150".into());
+        assert_eq!(run("list.split").cover, None);
+        assert!(!open().side);
+        // A Task Proxy that reports spec 0.1.4 can cover, whatever its version.
+        *host.spec.borrow_mut() = Some("0.1.4".into());
+        assert!(open().cover);
     }
 
     #[test]

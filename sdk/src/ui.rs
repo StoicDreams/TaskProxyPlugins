@@ -131,6 +131,10 @@ pub enum Node {
         action: Action,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         theme: String,
+        /// Draws a switch between two states, on or off, instead of a button. Clicking it runs `action`, which
+        /// switches the state and draws the page again. Since spec 0.1.4: older hosts draw a button with `theme`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on: Option<bool>,
     },
     /// Buttons and links in a bar.
     Toolbar { children: Vec<Node> },
@@ -443,6 +447,18 @@ pub fn button(action: Action, theme: &str) -> Node {
     Node::Button {
         action,
         theme: theme.to_string(),
+        on: None,
+    }
+}
+
+/// A switch between two states, such as a view that is on or off, that runs `action` when clicked. Name what it
+/// switches in the action's label, without the state. Hosts before spec 0.1.4 draw a button, primary when on and
+/// secondary when off.
+pub fn switch(action: Action, on: bool) -> Node {
+    Node::Button {
+        action,
+        theme: if on { "primary" } else { "secondary" }.to_string(),
+        on: Some(on),
     }
 }
 
@@ -578,6 +594,22 @@ mod tests {
                 action: None,
                 sort: None
             }
+        );
+        // A switch tells hosts that draw one whether it is on, and older hosts see its state in the theme.
+        assert_eq!(
+            serde_json::to_value(switch(Action::new("split", "Split view"), true)).unwrap(),
+            json!({ "type": "button", "action": { "id": "split", "label": "Split view" }, "theme": "primary", "on": true })
+        );
+        assert_eq!(
+            serde_json::to_value(switch(Action::new("split", "Split view"), false)).unwrap()["theme"],
+            "secondary"
+        );
+        // A plain button sends no on, so hosts draw a button.
+        assert!(
+            serde_json::to_value(button(Action::new("go", "Go"), "primary"))
+                .unwrap()
+                .get("on")
+                .is_none()
         );
         let clip = clip("Long text", Some(Action::new("open", "Open")));
         assert_eq!(

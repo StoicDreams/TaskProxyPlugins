@@ -141,6 +141,8 @@ pub mod testing {
         pub now: Cell<u64>,
         /// The spec version `host_info` reports. `None` answers with an error, as Task Proxy 0.1.121 does.
         pub spec: RefCell<Option<String>>,
+        /// The Task Proxy version `host_info` reports, 0.1.122 unless a test sets it.
+        pub app: RefCell<Option<String>>,
     }
 
     impl FakeHost {
@@ -224,7 +226,11 @@ pub mod testing {
                 .clone()
                 .ok_or_else(|| Error::new("Task Proxy did not understand the request."))?;
             Ok(taskproxy_plugin_sdk::HostInfo {
-                app: "0.1.122".into(),
+                app: self
+                    .app
+                    .borrow()
+                    .clone()
+                    .unwrap_or_else(|| "0.1.122".into()),
                 spec,
                 platform: "linux".into(),
             })

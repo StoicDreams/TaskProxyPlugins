@@ -58,6 +58,10 @@ pub struct ActionResult {
     /// The choices for a `Select` node or a field's `suggest`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<Vec<Choice>>,
+    /// Changes whether the page shown beside this one covers it, keeping the page that shows there. Since spec
+    /// 0.1.4.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<bool>,
 }
 
 impl ActionResult {
@@ -74,6 +78,7 @@ impl ActionResult {
                 page: page.into(),
                 params,
                 side: false,
+                cover: false,
             }),
             ..Default::default()
         }
@@ -124,6 +129,17 @@ impl ActionResult {
         self
     }
 
+    /// Whether a page beside another covers it at any width, with a button on each to switch between them, as in a
+    /// narrow window. On a result that navigates beside, it is how that page opens. On any other result, it changes
+    /// the page already beside. Since spec 0.1.4: hosts that support `side` but not this show both side by side.
+    pub fn cover(mut self, cover: bool) -> Self {
+        match self.navigate.as_mut() {
+            Some(navigate) => navigate.cover = cover,
+            None => self.cover = Some(cover),
+        }
+        self
+    }
+
     pub fn with_message(mut self, text: impl Into<String>, theme: &str) -> Self {
         self.message = Some(Message {
             text: text.into(),
@@ -149,6 +165,10 @@ pub struct Navigate {
     /// Opens the page beside the current one. Since spec 0.1.4.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub side: bool,
+    /// With `side`, the page covers the current one at any width, with a button on each to switch between them.
+    /// Since spec 0.1.4.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cover: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
