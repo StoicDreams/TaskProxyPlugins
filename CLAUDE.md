@@ -30,6 +30,8 @@ cargo run -p taskproxy-jira --example demo -- plugins/jira/demo   # Refresh the 
 
 **Tests check what the software does, never how it looks** (the standard for every Stoic Dreams project, set 2026-11-17, in full in `Websites/CLAUDE.md`). Assert what is shown or hidden, its text, order, what an action does, and what is sent, saved, or returned. Never assert pixel positions, sizes, spacing, scroll offsets, or specific colors, fonts, or theme values: layout and look are checked by eye in the recorded screenshots and loops. `toBeVisible` and `toBeInViewport` are fine, scrolling is tested as what happens (the page not moving when a pane scrolls), and plugin screens are tested by the UI they return.
 
+**Tests pass every time** (also in full in `Websites/CLAUDE.md`, under "Tests that pass every time"). A test fails only when the code is broken: no sleeps or real-time waits, no reliance on the real clock, the network, test order, or state another test left, and no retries or longer timeouts to get a test through. A test that fails once and passes on a rerun is a broken test to fix.
+
 ## Things that will catch you out
 
 - **Pushing to `main` publishes every plugin** to the CDN catalog. Don't push unless asked.
