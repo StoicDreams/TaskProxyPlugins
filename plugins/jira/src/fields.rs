@@ -449,6 +449,15 @@ pub fn value_node(id: &str, value: &Value) -> Node {
 }
 
 fn comments(value: &Value) -> Node {
+    comments_with(value, |comment| {
+        ui::markdown(adf::to_markdown(
+            comment.get("body").unwrap_or(&Value::Null),
+        ))
+    })
+}
+
+/// Each comment's author, date, and body, drawn by `body`.
+pub fn comments_with(value: &Value, body: impl Fn(&Value) -> Node) -> Node {
     let list = value
         .get("comments")
         .and_then(Value::as_array)
@@ -465,10 +474,9 @@ fn comments(value: &Value) -> Node {
                     .and_then(Value::as_str)
                     .unwrap_or("Someone");
                 let when = short_date(comment.get("created").and_then(Value::as_str).unwrap_or(""));
-                let body = adf::to_markdown(comment.get("body").unwrap_or(&Value::Null));
                 ui::stack(vec![
                     ui::row(vec![ui::strong(author), ui::muted(when)]),
-                    ui::markdown(body),
+                    body(comment),
                 ])
             })
             .collect(),

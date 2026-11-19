@@ -207,6 +207,9 @@ fn property(jira: &Jira, fields: &Fields, issue: &Value, real: &str, label: &str
         property.edit = Some(list::text_editor(fields, key, real, &value));
         return property;
     }
+    if real == "comment" {
+        return ui::property(label, images::comments(jira, key, &value));
+    }
     ui::property(label, fields::value_node(real, &value))
 }
 

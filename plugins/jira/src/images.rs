@@ -74,7 +74,7 @@ fn attachment_ids(doc: &Value, rendered: &str, attachments: &[Value]) -> Vec<Opt
 /// The data URIs for a field's images, by the names `adf::to_markdown_with_media` gives them. Images that cannot be
 /// read are left out, so the rest of the field still shows.
 pub fn for_field(jira: &Jira, key: &str, real: &str, doc: &Value) -> BTreeMap<String, String> {
-    let mut images = BTreeMap::new();
+    let images = BTreeMap::new();
     // Task Proxy 0.1.122 and earlier send files as text, which would break them.
     if adf::media_nodes(doc).is_empty() || !host_supports(jira.host, "0.1.3") {
         return images;
@@ -95,11 +95,21 @@ pub fn for_field(jira: &Jira, key: &str, real: &str, doc: &Value) -> BTreeMap<St
         .pointer(&format!("/renderedFields/{}", real))
         .and_then(Value::as_str)
         .unwrap_or("");
-    for (index, id) in attachment_ids(doc, rendered, &attachments)
-        .into_iter()
-        .enumerate()
-        .take(MAX_IMAGES)
-    {
+    download(
+        jira,
+        attachment_ids(doc, rendered, &attachments),
+        &attachments,
+    )
+}
+
+/// Downloads each found attachment as a data URI, named by its place among the document's images.
+fn download(
+    jira: &Jira,
+    ids: Vec<Option<String>>,
+    attachments: &[Value],
+) -> BTreeMap<String, String> {
+    let mut images = BTreeMap::new();
+    for (index, id) in ids.into_iter().enumerate().take(MAX_IMAGES) {
         let Some(id) = id else { continue };
         let attachment = attachments
             .iter()
@@ -138,6 +148,58 @@ pub fn for_field(jira: &Jira, key: &str, real: &str, doc: &Value) -> BTreeMap<St
         }
     }
     images
+}
+
+/// An issue's comments, each with the images it shows. The attachments and each comment's rendered body, which
+/// say which attachment each image is, come in one request, only when a comment has an image.
+pub fn comments(jira: &Jira, key: &str, value: &Value) -> Node {
+    let has_media = value
+        .get("comments")
+        .and_then(Value::as_array)
+        .is_some_and(|list| {
+            list.iter().any(|comment| {
+                !adf::media_nodes(comment.get("body").unwrap_or(&Value::Null)).is_empty()
+            })
+        });
+    if !has_media || !host_supports(jira.host, "0.1.3") {
+        return crate::fields::value_node("comment", value);
+    }
+    let issue = jira
+        .get(&format!(
+            "issue/{}?fields=attachment,comment&expand=renderedFields",
+            encode(key)
+        ))
+        .unwrap_or(Value::Null);
+    let attachments: Vec<Value> = issue
+        .pointer("/fields/attachment")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let rendered: BTreeMap<&str, &str> = issue
+        .pointer("/renderedFields/comment/comments")
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(|comment| {
+                    Some((comment.get("id")?.as_str()?, comment.get("body")?.as_str()?))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::fields::comments_with(value, |comment| {
+        let body = comment.get("body").unwrap_or(&Value::Null);
+        if adf::media_nodes(body).is_empty() {
+            return taskproxy_plugin_sdk::ui::markdown(adf::to_markdown(body));
+        }
+        let id = comment.get("id").and_then(Value::as_str).unwrap_or("");
+        let html = rendered.get(id).copied().unwrap_or("");
+        let (text, _) = adf::to_markdown_with_media(body);
+        Node::Markdown {
+            images: download(jira, attachment_ids(body, html, &attachments), &attachments),
+            text,
+            toggle: false,
+        }
+    })
 }
 
 /// Rich text as markdown with its images, and a switch to the text as written.
@@ -229,5 +291,54 @@ mod tests {
                 .filter(|request| request.url.contains("attachment/"))
                 .all(|request| request.encoding.as_deref() == Some("base64"))
         );
+    }
+
+    #[test]
+    fn comments_show_their_images_and_ask_nothing_more_without_any() {
+        let host = FakeHost::connected();
+        *host.spec.borrow_mut() = Some("0.1.3".into());
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let text = |words: &str| json!({ "type": "doc", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": words }] }] });
+        let plain = json!({ "comments": [{ "id": "1", "author": { "displayName": "Sam Lee" }, "body": text("Hi") }] });
+        assert_eq!(
+            comments(&jira, "P-1", &plain),
+            crate::fields::value_node("comment", &plain)
+        );
+        assert!(host.sent.borrow().is_empty(), "no images, nothing to ask");
+
+        host.answer(
+            "GET",
+            "/rest/api/3/issue/P-1",
+            200,
+            json!({
+                "fields": { "attachment": [{ "id": "10005", "filename": "image-20261119.png", "mimeType": "image/png", "size": 100 }] },
+                "renderedFields": { "comment": { "comments": [
+                    { "id": "2", "body": "<p><img src=\"/rest/api/3/attachment/content/10005\"></p>" }
+                ] } }
+            }),
+        );
+        host.answer(
+            "GET",
+            "/rest/api/3/attachment/content/10005?redirect=false",
+            200,
+            json!("iVBORw0K"),
+        );
+        // Jira's media nodes in a comment name no file, so the rendered body says which attachment it is.
+        let with_image = json!({ "comments": [
+            { "id": "1", "author": { "displayName": "Sam Lee" }, "body": text("Hi") },
+            { "id": "2", "author": { "displayName": "Priya Shah" }, "body": { "type": "doc", "content": [
+                { "type": "mediaSingle", "content": [{ "type": "media", "attrs": { "id": "u9", "type": "file" } }] }
+            ] } }
+        ] });
+        let drawn = serde_json::to_value(comments(&jira, "P-1", &with_image)).unwrap();
+        let drawn = drawn.to_string();
+        assert!(
+            drawn.contains("data:image/png;base64,iVBORw0K"),
+            "{}",
+            drawn
+        );
+        assert!(drawn.contains("](media-0)"), "{}", drawn);
+        assert!(!drawn.contains("(attachment)"), "{}", drawn);
+        assert!(drawn.contains("Hi"));
     }
 }

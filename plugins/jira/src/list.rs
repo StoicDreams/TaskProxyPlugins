@@ -1260,7 +1260,7 @@ fn comments_dialog(jira: &Jira, key: &str) -> Result<Node> {
     ))?;
     let list = json!({ "comments": found.get("comments").cloned().unwrap_or(json!([])) });
     Ok(ui::stack(vec![
-        fields::value_node("comment", &list),
+        images::comments(jira, key, &list),
         ui::form(
             vec![comment_field(key, "Add a comment")],
             Action::new("cell.comment", "Comment").param("key", key),
