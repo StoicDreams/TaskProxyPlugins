@@ -437,6 +437,7 @@ pub(crate) fn is_choice(real: &str, fields: &Fields) -> bool {
 /// Fields of text the user can edit in a dialog.
 pub(crate) fn is_editable_text(real: &str, fields: &Fields) -> bool {
     matches!(real, "summary" | "description" | "environment")
+        || fields::duration_setting(real).is_some()
         || (real.starts_with("customfield_")
             && fields
                 .find(real)
@@ -514,7 +515,10 @@ pub(crate) fn cell(fields: &Fields, real: &str, label: &str, issue: Option<&Valu
                 .param("field", real),
         };
     }
-    let text = one_line(&fields::value_text(value));
+    let text = match value.as_u64() {
+        Some(seconds) if fields::is_duration(real) => fields::duration_text(seconds),
+        _ => one_line(&fields::value_text(value)),
+    };
     Node::Clip {
         muted: matches!(real, "updated" | "created"),
         theme: if real == "issuetype" {
@@ -1482,11 +1486,17 @@ const EDIT_PANEL: &str = "cell-edit";
 pub fn text_editor(fields: &Fields, key: &str, real: &str, value: &Value) -> Node {
     let text = if value.get("type").and_then(Value::as_str) == Some("doc") {
         adf::to_markdown_with_media(value).0
+    } else if let Some(seconds) = value.as_u64().filter(|_| fields::is_duration(real)) {
+        fields::duration_text(seconds)
     } else {
         value.as_str().unwrap_or("").to_string()
     };
     let field = if real == "summary" {
         Field::new(FieldKind::Text, "value", "Summary").required()
+    } else if fields::is_duration(real) {
+        Field::new(FieldKind::Text, "value", fields.name(real))
+            .placeholder("8h, 30m, or 1h 30m")
+            .required()
     } else {
         Field::new(FieldKind::Textarea, "value", fields.name(real)).placeholder(
             "Markdown: **bold**, *italic*, `code`, lists, and links. Keep a ![name](media-0) line to keep its image.",
@@ -1500,7 +1510,7 @@ pub fn text_editor(fields: &Fields, key: &str, real: &str, value: &Value) -> Nod
         cancel: None,
         buttons: Vec::new(),
         children: Vec::new(),
-        inline: real == "summary",
+        inline: real == "summary" || fields::is_duration(real),
         changed: None,
     }
 }
@@ -1720,6 +1730,26 @@ pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResul
             if real == "summary" && text.trim().is_empty() {
                 return Ok(Some(
                     ActionResult::default().with_message("An issue needs a summary.", "warning"),
+                ));
+            }
+            if let Some(part) = fields::duration_setting(real) {
+                let seconds = match fields::parse_duration(text) {
+                    Ok(seconds) => seconds,
+                    Err(help) => {
+                        return Ok(Some(ActionResult::default().with_message(help, "warning")));
+                    }
+                };
+                // Jira takes estimates in whole minutes.
+                let minutes = (seconds + 30) / 60;
+                jira.put(
+                    &format!("issue/{}", encode(key)),
+                    &json!({ "update": { "timetracking": [{ "edit": { part: format!("{}m", minutes) } }] } }),
+                )?;
+                return Ok(Some(
+                    ActionResult::default()
+                        .and_close()
+                        .and_refresh()
+                        .with_message(format!("{} saved.", key), "success"),
                 ));
             }
             let value = if is_rich_text(real, &fields) {
@@ -2763,6 +2793,64 @@ mod tests {
         let sent = host.sent.borrow();
         let put = sent.iter().find(|sent| sent.method == "PUT").unwrap();
         assert!(put.body.as_ref().unwrap().contains("\"type\":\"doc\""));
+    }
+
+    #[test]
+    fn original_estimate_shows_and_is_typed_in_hours_and_minutes() {
+        let host = connected();
+        host.answer(
+            "GET",
+            "/rest/api/3/issue/P-1",
+            200,
+            json!({ "key": "P-1", "fields": { "timeoriginalestimate": 28800 } }),
+        );
+        host.answer("PUT", "/rest/api/3/issue/P-1", 204, Value::Null);
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let fields = Fields::load(&jira).unwrap();
+        let issue =
+            json!({ "key": "P-1", "fields": { "timeoriginalestimate": 5400, "timespent": 28800 } });
+        let shown = serde_json::to_value(cell(
+            &fields,
+            "timeoriginalestimate",
+            "Original estimate",
+            Some(&issue),
+        ))
+        .unwrap();
+        assert_eq!(shown["text"], "1h 30m");
+        let spent =
+            serde_json::to_value(cell(&fields, "timespent", "Time spent", Some(&issue))).unwrap();
+        assert_eq!(spent["text"], "8h");
+        let run = |name: &str, form: Value| {
+            action(
+                &jira,
+                &request(
+                    "issues",
+                    name,
+                    json!({ "key": "P-1", "field": "timeoriginalestimate" }),
+                    form,
+                    json!({}),
+                ),
+            )
+            .unwrap()
+            .unwrap()
+        };
+        let opened = serde_json::to_value(run("cell.open", json!({})).dialog.unwrap().ui).unwrap();
+        assert_eq!(opened["fields"][0]["value"], "8h");
+        let refused = run("cell.save", json!({ "value": "2 days" }));
+        assert!(!refused.close_dialog);
+        assert!(
+            host.sent.borrow().iter().all(|sent| sent.method != "PUT"),
+            "nothing is saved"
+        );
+        let saved = run("cell.save", json!({ "value": "1h 30m" }));
+        assert!(saved.close_dialog && saved.refresh);
+        let sent = host.sent.borrow();
+        let put = sent.iter().find(|sent| sent.method == "PUT").unwrap();
+        assert_eq!(
+            put.body.as_deref().unwrap(),
+            json!({ "update": { "timetracking": [{ "edit": { "originalEstimate": "90m" } }] } })
+                .to_string()
+        );
     }
 
     #[test]

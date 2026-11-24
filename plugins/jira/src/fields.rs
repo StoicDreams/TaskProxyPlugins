@@ -383,6 +383,89 @@ pub fn status_theme(status: &Value) -> &'static str {
     }
 }
 
+/// Time tracking fields, which Jira keeps in seconds and shows as hours and minutes.
+const DURATIONS: [&str; 6] = [
+    "timeoriginalestimate",
+    "aggregatetimeoriginalestimate",
+    "timeestimate",
+    "aggregatetimeestimate",
+    "timespent",
+    "aggregatetimespent",
+];
+
+/// Whether a field holds a time in seconds, such as Original estimate.
+pub fn is_duration(real: &str) -> bool {
+    DURATIONS.contains(&real)
+}
+
+/// The part of `timetracking` that sets a duration field, for the ones that can be changed. Time spent comes from
+/// work logged, and the sums from the subtasks.
+pub fn duration_setting(real: &str) -> Option<&'static str> {
+    match real {
+        "timeoriginalestimate" => Some("originalEstimate"),
+        "timeestimate" => Some("remainingEstimate"),
+        _ => None,
+    }
+}
+
+/// Seconds as Jira shows them, such as `8h` or `1h 30m`, leaving out the parts that are 0.
+pub fn duration_text(seconds: u64) -> String {
+    let parts: Vec<String> = [
+        (seconds / 3600, "h"),
+        (seconds / 60 % 60, "m"),
+        (seconds % 60, "s"),
+    ]
+    .iter()
+    .filter(|(amount, _)| *amount > 0)
+    .map(|(amount, unit)| format!("{}{}", amount, unit))
+    .collect();
+    if parts.is_empty() {
+        "0m".into()
+    } else {
+        parts.join(" ")
+    }
+}
+
+/// A time typed as Jira shows them, such as `8h`, `30m`, `1h 30m`, or `1.5h`, in seconds. A number on its own is
+/// hours.
+pub fn parse_duration(text: &str) -> std::result::Result<u64, String> {
+    const HELP: &str = "Enter hours, minutes, or seconds, such as 8h, 30m, or 1h 30m.";
+    let text = text.trim().to_ascii_lowercase();
+    if text.is_empty() {
+        return Err(HELP.into());
+    }
+    if let Ok(hours) = text.parse::<f64>() {
+        return (hours >= 0.0)
+            .then(|| (hours * 3600.0).round() as u64)
+            .ok_or_else(|| HELP.into());
+    }
+    let mut total = 0.0;
+    let mut number = String::new();
+    let mut units = 0;
+    for ch in text.chars() {
+        match ch {
+            '0'..='9' | '.' => number.push(ch),
+            'h' | 'm' | 's' => {
+                let amount: f64 = number.parse().map_err(|_| HELP.to_string())?;
+                total += amount
+                    * match ch {
+                        'h' => 3600.0,
+                        'm' => 60.0,
+                        _ => 1.0,
+                    };
+                number.clear();
+                units += 1;
+            }
+            ' ' | ',' if number.is_empty() => {}
+            _ => return Err(HELP.into()),
+        }
+    }
+    if !number.is_empty() || units == 0 {
+        return Err(HELP.into());
+    }
+    Ok(total.round() as u64)
+}
+
 /// A value as short text, for tables and lists of values.
 pub fn value_text(value: &Value) -> String {
     match value {
@@ -420,6 +503,11 @@ pub fn value_node(id: &str, value: &Value) -> Node {
     }
     if id == "status" {
         return ui::badge(value_text(value), status_theme(value));
+    }
+    if is_duration(id)
+        && let Some(seconds) = value.as_u64()
+    {
+        return ui::text(duration_text(seconds));
     }
     if value.get("type").and_then(Value::as_str) == Some("doc") {
         let markdown = adf::to_markdown(value);
@@ -675,6 +763,27 @@ mod tests {
             ),
             ui::text("P-1 Login")
         );
+    }
+
+    #[test]
+    fn durations_read_and_write_as_jira_shows_them() {
+        assert_eq!(duration_text(28800), "8h");
+        assert_eq!(duration_text(1800), "30m");
+        assert_eq!(duration_text(3600 + 60 + 5), "1h 1m 5s");
+        assert_eq!(duration_text(0), "0m");
+        assert_eq!(
+            value_node("timeoriginalestimate", &json!(14400)),
+            ui::text("4h")
+        );
+        assert_eq!(parse_duration("8h"), Ok(28800));
+        assert_eq!(parse_duration("30m"), Ok(1800));
+        assert_eq!(parse_duration(" 1H 30m 15s "), Ok(5415));
+        assert_eq!(parse_duration("1h30m"), Ok(5400));
+        assert_eq!(parse_duration("1.5h"), Ok(5400));
+        assert_eq!(parse_duration("2"), Ok(7200), "a number alone is hours");
+        for wrong in ["", "2d", "h", "8 h x", "-1", "m5"] {
+            assert!(parse_duration(wrong).is_err(), "{:?}", wrong);
+        }
     }
 
     #[test]
