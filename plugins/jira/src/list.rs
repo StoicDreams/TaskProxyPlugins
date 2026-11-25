@@ -429,6 +429,7 @@ pub(crate) fn is_choice(real: &str, fields: &Fields) -> bool {
     matches!(real, "status" | "priority" | "assignee")
         || fields.sprint().as_deref() == Some(real)
         || fields.is_story_points(real)
+        || fields::duration_setting(real).is_some()
         || fields
             .find(real)
             .is_some_and(|field| field.kind == "option")
@@ -497,6 +498,8 @@ pub(crate) fn cell(fields: &Fields, real: &str, label: &str, issue: Option<&Valu
     if is_choice(real, fields) {
         let text = if fields.sprint().as_deref() == Some(real) {
             sprint_text(value)
+        } else if let Some(seconds) = value.as_u64().filter(|_| fields::is_duration(real)) {
+            fields::duration_text(seconds)
         } else {
             fields::value_text(value)
         };
@@ -1306,6 +1309,32 @@ fn editmeta_choices(jira: &Jira, key: &str, real: &str) -> Result<Vec<Choice>> {
     Ok(choices)
 }
 
+/// Estimates offered in a table, with Other to type any time.
+const ESTIMATES: [&str; 12] = [
+    "15m", "30m", "1h", "2h", "3h", "4h", "6h", "8h", "12h", "16h", "24h", "40h",
+];
+const OTHER_ESTIMATE: &str = "other";
+
+/// Sets an estimate typed as Jira shows them, such as `1h 30m`, or says how to type one.
+fn save_estimate(
+    jira: &Jira,
+    key: &str,
+    part: &str,
+    text: &str,
+) -> Result<std::result::Result<(), String>> {
+    let seconds = match fields::parse_duration(text) {
+        Ok(seconds) => seconds,
+        Err(help) => return Ok(Err(help)),
+    };
+    // Jira takes estimates in whole minutes.
+    let minutes = (seconds + 30) / 60;
+    jira.put(
+        &format!("issue/{}", encode(key)),
+        &json!({ "update": { "timetracking": [{ "edit": { part: format!("{}m", minutes) } }] } }),
+    )?;
+    Ok(Ok(()))
+}
+
 fn choices_for(jira: &Jira, fields: &Fields, key: &str, real: &str) -> Result<Vec<Choice>> {
     if real == "status" {
         let transitions = jira.get(&format!("issue/{}/transitions", encode(key)))?;
@@ -1350,6 +1379,14 @@ fn choices_for(jira: &Jira, fields: &Fields, key: &str, real: &str) -> Result<Ve
         let project = key.split('-').next().unwrap_or("");
         let mut choices = vec![Choice::new("", "Backlog (no sprint)")];
         choices.extend(sprints(jira, Some(project)));
+        return Ok(choices);
+    }
+    if fields::duration_setting(real).is_some() {
+        let mut choices: Vec<Choice> = ESTIMATES
+            .iter()
+            .map(|estimate| Choice::new(*estimate, *estimate))
+            .collect();
+        choices.push(Choice::new(OTHER_ESTIMATE, "Other…"));
         return Ok(choices);
     }
     if fields.is_story_points(real) {
@@ -1702,6 +1739,22 @@ pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResul
         "cell.set" => {
             let fields = Fields::load(jira)?;
             let value = form_text(request, "value");
+            if let Some(part) = fields::duration_setting(real) {
+                let label = field_label(&portable(real, &fields), &fields);
+                if value == OTHER_ESTIMATE {
+                    return Ok(Some(ActionResult::dialog(
+                        format!("{} · {}", key, label),
+                        text_dialog(jira, &fields, key, real)?,
+                    )));
+                }
+                if let Err(help) = save_estimate(jira, key, part, value)? {
+                    return Ok(Some(ActionResult::default().with_message(help, "warning")));
+                }
+                return Ok(Some(ActionResult::refresh().with_message(
+                    format!("{} changed on {}.", label, key),
+                    "success",
+                )));
+            }
             set_choice(jira, &fields, key, real, value)?;
             ActionResult::refresh().with_message(
                 format!(
@@ -1733,18 +1786,9 @@ pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResul
                 ));
             }
             if let Some(part) = fields::duration_setting(real) {
-                let seconds = match fields::parse_duration(text) {
-                    Ok(seconds) => seconds,
-                    Err(help) => {
-                        return Ok(Some(ActionResult::default().with_message(help, "warning")));
-                    }
-                };
-                // Jira takes estimates in whole minutes.
-                let minutes = (seconds + 30) / 60;
-                jira.put(
-                    &format!("issue/{}", encode(key)),
-                    &json!({ "update": { "timetracking": [{ "edit": { part: format!("{}m", minutes) } }] } }),
-                )?;
+                if let Err(help) = save_estimate(jira, key, part, text)? {
+                    return Ok(Some(ActionResult::default().with_message(help, "warning")));
+                }
                 return Ok(Some(
                     ActionResult::default()
                         .and_close()
@@ -2816,6 +2860,7 @@ mod tests {
             Some(&issue),
         ))
         .unwrap();
+        assert_eq!(shown["type"], "select", "an estimate changes in place");
         assert_eq!(shown["text"], "1h 30m");
         let spent =
             serde_json::to_value(cell(&fields, "timespent", "Time spent", Some(&issue))).unwrap();
@@ -2834,7 +2879,12 @@ mod tests {
             .unwrap()
             .unwrap()
         };
-        let opened = serde_json::to_value(run("cell.open", json!({})).dialog.unwrap().ui).unwrap();
+        let options = run("cell.options", json!({})).options.unwrap();
+        assert!(options.iter().any(|choice| choice.value == "8h"));
+        assert_eq!(options.last().unwrap().label, "Other…");
+        // Other opens a box to type any time, holding the one it has.
+        let other = run("cell.set", json!({ "value": "other" }));
+        let opened = serde_json::to_value(other.dialog.unwrap().ui).unwrap();
         assert_eq!(opened["fields"][0]["value"], "8h");
         let refused = run("cell.save", json!({ "value": "2 days" }));
         assert!(!refused.close_dialog);
@@ -2844,12 +2894,20 @@ mod tests {
         );
         let saved = run("cell.save", json!({ "value": "1h 30m" }));
         assert!(saved.close_dialog && saved.refresh);
+        let picked = run("cell.set", json!({ "value": "4h" }));
+        assert!(picked.refresh);
         let sent = host.sent.borrow();
-        let put = sent.iter().find(|sent| sent.method == "PUT").unwrap();
+        let puts: Vec<String> = sent
+            .iter()
+            .filter(|sent| sent.method == "PUT")
+            .map(|sent| sent.body.clone().unwrap_or_default())
+            .collect();
         assert_eq!(
-            put.body.as_deref().unwrap(),
-            json!({ "update": { "timetracking": [{ "edit": { "originalEstimate": "90m" } }] } })
-                .to_string()
+            puts,
+            [
+                json!({ "update": { "timetracking": [{ "edit": { "originalEstimate": "90m" } }] } }).to_string(),
+                json!({ "update": { "timetracking": [{ "edit": { "originalEstimate": "240m" } }] } }).to_string()
+            ]
         );
     }
 
