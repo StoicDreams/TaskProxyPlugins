@@ -39,6 +39,21 @@ pub fn host_covers(host: &dyn taskproxy_plugin_sdk::Host) -> bool {
     parts.len() == 3 && (parts[0], parts[1], parts[2]) > (0, 1, 150)
 }
 
+/// Whether My Issues and All Issues lean their column titles, so long titles don't widen the columns. On unless the
+/// user turned it off.
+const ANGLED_HEADERS_KEY: &str = "angledHeaders";
+
+pub fn angled_headers(host: &dyn taskproxy_plugin_sdk::Host) -> Result<bool> {
+    Ok(host
+        .store_get(ANGLED_HEADERS_KEY)?
+        .and_then(|value| value.as_bool())
+        .unwrap_or(true))
+}
+
+pub fn set_angled_headers(host: &dyn taskproxy_plugin_sdk::Host, on: bool) -> Result<()> {
+    host.store_set(ANGLED_HEADERS_KEY, Some(json!(on)))
+}
+
 pub fn set_split_view(host: &dyn taskproxy_plugin_sdk::Host, on: bool) -> Result<()> {
     host.store_set(SPLIT_VIEW_KEY, Some(json!(on)))
 }

@@ -59,6 +59,16 @@
           "on": true,
           "theme": "primary",
           "type": "button"
+        },
+        {
+          "action": {
+            "icon": "italic",
+            "id": "list.angled",
+            "label": "Angled headers"
+          },
+          "on": true,
+          "theme": "primary",
+          "type": "button"
         }
       ],
       "changed": {
@@ -735,6 +745,7 @@
       "type": "row"
     },
     {
+      "angled": true,
       "columns": [
         {
           "action": {

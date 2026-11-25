@@ -49,6 +49,10 @@ pub enum Node {
     Table {
         columns: Vec<Column>,
         rows: Vec<TableRow>,
+        /// Leans each column's title at 45 degrees, so long titles don't make a column wider than its values. Since
+        /// spec 0.1.4: older hosts draw the titles level.
+        #[serde(default, skip_serializing_if = "is_false")]
+        angled: bool,
     },
     /// A value the user can change in place, such as an issue's status in a table. Clicking it asks the plugin
     /// for the choices with `options`, whose result lists them in `options`, so a long table does not load the
@@ -555,6 +559,7 @@ mod tests {
                     action: Some(Action::new("open", "Open").param("key", "P-1")),
                     theme: String::new(),
                 }],
+                angled: false,
             },
             button(Action::new("refresh", "Refresh").icon("rotate"), ""),
         ]);

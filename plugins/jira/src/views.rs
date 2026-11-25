@@ -508,6 +508,7 @@ pub fn page(host: &dyn Host, fields: &Fields, params: &Map<String, Value>) -> Re
                 "".into(),
             ],
             rows,
+            angled: false,
         },
     ]))
 }
@@ -618,7 +619,11 @@ fn work_table<'a>(
                 }
             })
             .collect();
-    Node::Table { columns, rows }
+    Node::Table {
+        columns,
+        rows,
+        angled: false,
+    }
 }
 
 /// A layer's linked work items, as Jira shows them: grouped by how they are linked, such as "is blocked by", each

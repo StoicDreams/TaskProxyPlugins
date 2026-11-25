@@ -1,6 +1,6 @@
 [package]
 name = "taskproxy-jira"
-version = "0.1.14"
+version = "0.1.15"
 description = "Jira Cloud for Task Proxy"
 publish = false
 edition.workspace = true

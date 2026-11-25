@@ -945,6 +945,7 @@ pub fn page(
         );
     }
     let split = crate::pages::split_view(host)?;
+    let angled = crate::pages::angled_headers(host)?;
     // Every button sits in one row above the table, and what they open shows below it, so the issues start high on
     // the page.
     let mut children = vec![Node::Form {
@@ -965,6 +966,11 @@ pub fn page(
             ui::switch(
                 Action::new("list.split", "Split view").icon("table-columns"),
                 split,
+            ),
+            // Whether the table's column titles lean, so long titles don't widen the columns.
+            ui::switch(
+                Action::new("list.angled", "Angled headers").icon("italic"),
+                angled,
             ),
         ],
         // Refresh runs the search again as it is, and the button becomes Search once the user changes it. Both
@@ -1053,6 +1059,7 @@ pub fn page(
         children.push(Node::Table {
             columns: table_columns,
             rows,
+            angled,
         });
     }
     let mut paging = Vec::new();
@@ -1597,6 +1604,11 @@ pub fn action(jira: &Jira, request: &ActionRequest) -> Result<Option<ActionResul
                 ActionResult::refresh()
             }
         }
+        "list.angled" => {
+            let on = !crate::pages::angled_headers(host)?;
+            crate::pages::set_angled_headers(host, on)?;
+            ActionResult::refresh()
+        }
         "list.search" => {
             let mut params = search_params(&request.page_params);
             let jql = form_text(request, "jql");
@@ -2071,6 +2083,63 @@ mod tests {
         // Older hosts read no side, and the field is left out when it is off.
         let json = serde_json::to_value(open("issues")).unwrap();
         assert!(json.get("side").is_none());
+    }
+
+    #[test]
+    fn angled_headers_are_on_until_switched_off() {
+        let host = connected();
+        host.answer(
+            "POST",
+            "/rest/api/3/search/jql",
+            200,
+            json!({ "issues": [{ "key": "P-1", "fields": { "summary": "One" } }] }),
+        );
+        let jira = Jira::connect(&host).unwrap().unwrap();
+        let drawn = || {
+            let node = serde_json::to_value(
+                page(
+                    &jira,
+                    &Fields::load(&jira).unwrap(),
+                    List::Mine,
+                    &page_params(json!({})),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            fn find<'a>(value: &'a Value, test: &dyn Fn(&Value) -> bool) -> Option<&'a Value> {
+                if test(value) {
+                    return Some(value);
+                }
+                match value {
+                    Value::Array(items) => items.iter().find_map(|item| find(item, test)),
+                    Value::Object(map) => map.values().find_map(|item| find(item, test)),
+                    _ => None,
+                }
+            }
+            let switch = find(&node, &|value| {
+                value["type"] == "button" && value["action"]["id"] == "list.angled"
+            })
+            .map(|value| (value["action"]["label"].clone(), value["on"].clone()));
+            let table =
+                find(&node, &|value| value["type"] == "table").map(|table| table["angled"].clone());
+            (switch.unwrap(), table.unwrap())
+        };
+        assert_eq!(
+            drawn(),
+            ((json!("Angled headers"), json!(true)), json!(true))
+        );
+        let turned = action(
+            &jira,
+            &request("issues", "list.angled", json!({}), json!({}), json!({})),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(turned.refresh);
+        // Off, the table leaves the field out, so its titles are level.
+        assert_eq!(
+            drawn(),
+            ((json!("Angled headers"), json!(false)), Value::Null)
+        );
     }
 
     #[test]
